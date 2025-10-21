@@ -1,0 +1,94 @@
+{
+  "Scenario A": {
+    "name": "Scenario A",
+    "current_age": 35,
+    "retirement_age": 65,
+    "end_age": 95,
+    "current_balance": 250000.0,
+    "contrib_amount": 2000.0,
+    "contrib_cadence": "Monthly",
+    "nominal_return_pct": 7.0,
+    "return_stdev_pct": 12.0,
+    "inflation_pct": 2.5,
+    "fee_pct": 0.3,
+    "withdrawal_method": "Fixed real dollars",
+    "withdrawal_pct": 4.0,
+    "withdrawal_real_amount": 10000.0,
+    "withdrawal_frequency": "Monthly",
+    "liquidity_events": [
+      {
+        "type": "One-time inflow",
+        "label": "Sell House",
+        "start_age": 55,
+        "end_age": 55,
+        "amount": 300000.0,
+        "recurrence": "One-time",
+        "enabled": true,
+        "taxable": false,
+        "tax_rate": 0.0
+      },
+      {
+        "type": "Recurring outflow",
+        "label": "Boner Pills",
+        "start_age": 20,
+        "end_age": 80,
+        "amount": -10000.0,
+        "recurrence": "Annual",
+        "enabled": true,
+        "taxable": false,
+        "tax_rate": 0.0
+      },
+      {
+        "type": "One-time inflow",
+        "label": "Sell House",
+        "start_age": 60,
+        "end_age": 60,
+        "amount": 100000.0,
+        "recurrence": "One-time",
+        "enabled": true,
+        "taxable": false,
+        "tax_rate": 0.0
+      }
+    ],
+    "enable_mc": true,
+    "mc_runs": 5000,
+    "enable_taxes": false,
+    "effective_tax_rate_pct": 0.0,
+    "inflation_enabled": true
+  },
+  "Scenario B": {
+    "name": "Scenario B",
+    "current_age": 30,
+    "retirement_age": 65,
+    "end_age": 95,
+    "current_balance": 100000.0,
+    "contrib_amount": 500.0,
+    "contrib_cadence": "Monthly",
+    "nominal_return_pct": 7.0,
+    "return_stdev_pct": 15.0,
+    "inflation_pct": 3.0,
+    "fee_pct": 0.5,
+    "withdrawal_method": "Fixed % of prior-year end balance",
+    "withdrawal_pct": 4.0,
+    "withdrawal_real_amount": 50000,
+    "withdrawal_frequency": "Annual",
+    "liquidity_events": [
+      {
+        "type": "One-time inflow",
+        "label": "Sell House",
+        "start_age": 50,
+        "end_age": 50,
+        "amount": 250000.0,
+        "recurrence": "One-time",
+        "enabled": true,
+        "taxable": false,
+        "tax_rate": 0.0
+      }
+    ],
+    "enable_mc": false,
+    "mc_runs": 1000,
+    "enable_taxes": false,
+    "effective_tax_rate_pct": 0.0,
+    "inflation_enabled": true
+  }
+}
