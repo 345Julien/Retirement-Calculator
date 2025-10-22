@@ -323,10 +323,18 @@ def run_monte_carlo(
     scenario: Scenario,
     liquidity_events: List[LiquidityEvent],
     runs: int = 1000,
-    seed: int = MC_SEED
+    seed: int = MC_SEED,
+    show_real: bool = True
 ) -> Dict[str, Any]:
     """
     Run Monte Carlo simulation with variable returns.
+    
+    Args:
+        scenario: Retirement scenario
+        liquidity_events: List of cash flow events
+        runs: Number of Monte Carlo simulations
+        seed: Random seed for reproducibility
+        show_real: If True, return paths in real (inflation-adjusted) values; if False, return nominal values
     
     Returns metrics including probability of success.
     """
@@ -405,7 +413,12 @@ def run_monte_carlo(
             end_balance_nominal = balance_after_cashflows + growth
             
             min_balance = min(min_balance, end_balance_nominal)
-            path.append(end_balance_nominal / cpi_index)  # Real values
+            
+            # Store path in real or nominal values based on show_real parameter
+            if show_real:
+                path.append(end_balance_nominal / cpi_index)  # Real values
+            else:
+                path.append(end_balance_nominal)  # Nominal values
             
             prior_year_end_balance = end_balance_nominal
             balance_nominal = end_balance_nominal
@@ -1567,7 +1580,7 @@ def main():
     mc_enabled_a = scenario_a.enable_mc if compare_scenarios else enable_mc
     mc_runs_a = scenario_a.mc_runs if compare_scenarios else mc_runs
     if mc_enabled_a:
-        mc_results_a = run_monte_carlo(scenario_a, liquidity_events_a, mc_runs_a)
+        mc_results_a = run_monte_carlo(scenario_a, liquidity_events_a, mc_runs_a, show_real=show_real)
         metrics_a.update(mc_results_a)
     
     # Calculate for Scenario B if comparing
@@ -1580,7 +1593,7 @@ def main():
         timeline_b, metrics_b = build_timeline(scenario_b, events_b, show_real)
         
         if scenario_b.enable_mc:
-            mc_results_b = run_monte_carlo(scenario_b, events_b, scenario_b.mc_runs)
+            mc_results_b = run_monte_carlo(scenario_b, events_b, scenario_b.mc_runs, show_real=show_real)
             metrics_b.update(mc_results_b)
     
     # ========================================================================
