@@ -1,8 +1,8 @@
 """
-Harbor Stone Retirement Calculator
+Gordon Goss Retirement Calculator
 Professional retirement planning and analysis platform
 
-Version: 1.0.0
+Version: 2.1.0
 Release Date: October 21, 2025
 License: MIT
 
@@ -22,8 +22,8 @@ Features:
 For documentation, see README.md and QUICK_START.md
 """
 
-__version__ = "1.0.0"
-__author__ = "Harbor Stone"
+__version__ = "2.1.0"
+__author__ = "Gordon Goss"
 __license__ = "MIT"
 
 import streamlit as st
@@ -55,6 +55,13 @@ class LiquidityEvent:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'LiquidityEvent':
+        # Migrate old type format to new Credit/Debit format
+        old_type = data.get('type', '')
+        if 'inflow' in old_type.lower():
+            data['type'] = 'Credit'
+        elif 'outflow' in old_type.lower():
+            data['type'] = 'Debit'
+        # If type is already Credit/Debit, no change needed
         return cls(**data)
 
 
@@ -107,7 +114,7 @@ class Scenario:
         return cls(**data)
 
 
-# Harbor Stone Brand Colors (Rolex-inspired)
+# Gordon Goss Brand Colors (Rolex-inspired)
 BRAND_PRIMARY = "#003d29"      # Deep forest green (Rolex green)
 BRAND_SECONDARY = "#c9a961"    # Champagne gold
 
@@ -123,7 +130,7 @@ INFLATION_PCT = 3.0
 FEE_PCT = 0.5
 WITHDRAWAL_PCT = 4.0
 WITHDRAWAL_REAL_AMOUNT = 50000
-ENABLE_MC = False
+ENABLE_MC = True
 MC_RUNS = 1000
 MC_SEED = 42
 CURRENCY = "USD"
@@ -161,29 +168,29 @@ def apply_liquidity_events(
             
         # Check if event applies this age
         if event.start_age <= age <= event.end_age:
-            if "One-time" in event.type or event.recurrence == "One-time":
+            if event.recurrence == "One-time":
                 # One-time events only apply at start_age
                 if age == event.start_age:
                     amount = event.amount
-                    # Amount is already signed correctly (negative for outflows)
+                    # Amount is already signed correctly (negative for debits)
                     net += amount
                     labels.append(event.label)
                     
-                    # Calculate taxes if taxable and has positive value (inflow)
-                    # Outflows are negative so they won't be taxed
+                    # Calculate taxes if taxable and has positive value (credit/inflow)
+                    # Debits are negative so they won't be taxed
                     if event.taxable and amount > 0:
                         event_taxes += amount * (event.tax_rate / 100.0)
             else:
-                # Recurring events
+                # Recurring events (Annual or Monthly)
                 amount = event.amount
                 if event.recurrence == "Monthly":
                     amount *= 12  # Annual aggregate
-                # Amount is already signed correctly (negative for outflows)
+                # Amount is already signed correctly (negative for debits)
                 net += amount
                 labels.append(event.label)
                 
-                # Calculate taxes if taxable and has positive value (inflow)
-                # Outflows are negative so they won't be taxed
+                # Calculate taxes if taxable and has positive value (credit/inflow)
+                # Debits are negative so they won't be taxed
                 if event.taxable and amount > 0:
                     event_taxes += amount * (event.tax_rate / 100.0)
     
@@ -281,6 +288,10 @@ def build_timeline(
             cpi_index=cpi_index,
             end_balance_real=end_balance_real
         ))
+
+        # Check for first shortfall (when balance goes negative)
+        if first_shortfall_age is None and end_balance_nominal < 0:
+            first_shortfall_age = age
 
         # Update for next iteration
         prior_year_end_balance = end_balance_nominal
@@ -515,7 +526,7 @@ def create_default_events() -> List[Dict[str, Any]]:
     """Create default liquidity events."""
     return [
         {
-            'type': 'One-time inflow',
+            'type': 'Credit',
             'label': 'Sell House',
             'start_age': HOUSE_SALE_AGE,
             'end_age': HOUSE_SALE_AGE,
@@ -548,7 +559,7 @@ def show_liquidity_events_page(planning_end_age: int = END_AGE):
             # Create empty template with one row (use planning_end_age as sensible default)
             events_df = pd.DataFrame([{
                 'enabled': True,
-                'type': 'One-time inflow',
+                'type': 'Credit',
                 'label': '',
                 'start_age': 65,
                 'end_age': planning_end_age,
@@ -564,11 +575,18 @@ def show_liquidity_events_page(planning_end_age: int = END_AGE):
             events_df['enabled'] = True
         events_df = events_df[[col for col in expected_columns if col in events_df.columns]]
         
+        # Auto-populate end_age for one-time events (for display purposes)
+        for idx in range(len(events_df)):
+            if events_df.iloc[idx].get('recurrence') == 'One-time':
+                start_age = events_df.iloc[idx].get('start_age')
+                if pd.notna(start_age):
+                    events_df.at[idx, 'end_age'] = start_age
+        
         # Use data editor - don't auto-save on every change
         edited_df = st.data_editor(
             events_df,
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             key="liquidity_events_editor",
             column_config={
                 "enabled": st.column_config.CheckboxColumn(
@@ -578,22 +596,30 @@ def show_liquidity_events_page(planning_end_age: int = END_AGE):
                 ),
                 "type": st.column_config.SelectboxColumn(
                     "Type",
-                    options=["One-time inflow", "One-time outflow", "Recurring inflow", "Recurring outflow"],
-                    required=True
+                    options=["Credit", "Debit"],
+                    required=True,
+                    help="Credit = money coming in, Debit = money going out"
                 ),
                 "label": st.column_config.TextColumn("Label", required=True, max_chars=50),
                 "start_age": st.column_config.NumberColumn("Start Age", min_value=0, max_value=110, required=True),
-                "end_age": st.column_config.NumberColumn("End Age", min_value=0, max_value=110, required=True),
+                "end_age": st.column_config.NumberColumn(
+                    "End Age", 
+                    min_value=0, 
+                    max_value=110, 
+                    required=False, 
+                    help="End age for recurring events (grayed out for one-time events)"
+                ),
                 "amount": st.column_config.NumberColumn(
                     "Amount", 
                     format="$%.2f", 
                     required=True,
-                    help="Enter positive numbers - direction is set by Type"
+                    help="Enter the amount per period (monthly/annual). Debits will automatically be negative."
                 ),
                 "recurrence": st.column_config.SelectboxColumn(
                     "Recurrence",
-                    options=["One-time", "Monthly", "Annual"],
-                    required=True
+                    options=["One-time", "Annual", "Monthly"],
+                    required=True,
+                    help="Monthly amounts will be multiplied by 12 to get annual total"
                 ),
                 "taxable": st.column_config.CheckboxColumn("Taxable?", default=False),
                 "tax_rate": st.column_config.NumberColumn(
@@ -605,17 +631,18 @@ def show_liquidity_events_page(planning_end_age: int = END_AGE):
                     help="Tax rate for this specific event (0% = tax-free)"
                 )
             },
-            column_order=["enabled", "type", "label", "start_age", "end_age", "amount", "recurrence", "taxable", "tax_rate"],
+            column_order=["enabled", "type", "recurrence", "label", "start_age", "end_age", "amount", "taxable", "tax_rate"],
             hide_index=True
         )
         
+        st.caption("**Tip**: For One-time events, End Age is automatically set to Start Age. For Monthly events, enter the monthly amount (e.g., $10,000/month will be calculated as $120,000/year). Debit amounts will be converted to negative values when you click Save.")
         st.markdown("---")
         
         # Save button to apply changes
         col1, col2, col3 = st.columns([2, 1, 1])
         
         with col2:
-            if st.button("Save Events", type="primary", use_container_width=True):
+            if st.button("Save Events", type="primary", width="stretch"):
                 # Process and validate edited data (robust parsing)
                 def _parse_number(val, default=0.0):
                     try:
@@ -649,15 +676,18 @@ def show_liquidity_events_page(planning_end_age: int = END_AGE):
 
                         recurrence = row.get('recurrence', 'One-time') or 'One-time'
 
+                        # For One-time events, force end_age to equal start_age
+                        if recurrence == 'One-time':
+                            end_age = start_age
                         # If this is a recurring event but end_age is not set or <= start_age, assume full planning horizon
-                        if recurrence != 'One-time' and end_age <= start_age:
+                        elif end_age <= start_age:
                             end_age = planning_end_age
 
                         # Normalize amount sign based on type
-                        typ = str(row.get('type', 'One-time outflow'))
-                        if 'outflow' in typ.lower():
+                        typ = str(row.get('type', 'Debit'))
+                        if typ.lower() == 'debit':
                             amount = -abs(amount)
-                        else:
+                        else:  # Credit
                             amount = abs(amount)
 
                         validated_row = {
@@ -680,11 +710,11 @@ def show_liquidity_events_page(planning_end_age: int = END_AGE):
                 # Save to session state
                 st.session_state.events_data = validated_data
                 st.session_state.events_draft = validated_data.copy()
-                st.success(f"✅ Saved {len(validated_data)} events!")
+                st.success(f"Saved {len(validated_data)} events!")
                 st.rerun()
         
         with col3:
-            if st.button("Reset", use_container_width=True):
+            if st.button("Reset", width="stretch"):
                 st.session_state.events_draft = st.session_state.events_data.copy()
                 st.rerun()
         
@@ -701,22 +731,150 @@ def show_liquidity_events_page(planning_end_age: int = END_AGE):
 
 
 
+def show_scenarios_page():
+    """Full-screen page for managing saved scenarios."""
+    st.markdown("## Scenario Management")
+    st.markdown("Manage your saved retirement planning scenarios.")
+    
+    # Load saved scenarios
+    if 'saved_scenarios' not in st.session_state:
+        st.session_state.saved_scenarios = load_scenarios()
+    
+    saved_scenarios = st.session_state.saved_scenarios
+    
+    if not saved_scenarios:
+        st.info("No saved scenarios yet. Return to the dashboard to create and save your first scenario.")
+    else:
+        # Initialize selected scenario in session state
+        if 'selected_scenario_for_action' not in st.session_state:
+            st.session_state.selected_scenario_for_action = None
+        
+        # Create DataFrame with key scenario details and selection checkbox
+        scenarios_data = []
+        for name, scenario in saved_scenarios.items():
+            scenarios_data.append({
+                'Select': name == st.session_state.selected_scenario_for_action,
+                'Name': name,
+                'Current Age': scenario.current_age,
+                'Retirement Age': scenario.retirement_age,
+                'End Age': scenario.end_age,
+                'Current Balance': scenario.current_balance,
+                'Withdrawal Method': scenario.withdrawal_method,
+                'Monte Carlo': scenario.enable_mc,
+                'Taxes Enabled': scenario.enable_taxes
+            })
+        
+        scenarios_df = pd.DataFrame(scenarios_data)
+        
+        # Use data_editor to allow checkbox selection
+        edited_df = st.data_editor(
+            scenarios_df,
+            use_container_width=True,
+            disabled=['Name', 'Current Age', 'Retirement Age', 'End Age', 'Current Balance', 'Withdrawal Method', 'Monte Carlo', 'Taxes Enabled'],
+            column_config={
+                'Select': st.column_config.CheckboxColumn(
+                    'Select',
+                    help="Check to select scenario for Load/Delete actions",
+                    default=False
+                ),
+                'Name': st.column_config.TextColumn('Name', width='medium'),
+                'Current Balance': st.column_config.NumberColumn('Current Balance', format="$%.2f"),
+                'Monte Carlo': st.column_config.CheckboxColumn('Monte Carlo'),
+                'Taxes Enabled': st.column_config.CheckboxColumn('Taxes Enabled')
+            },
+            hide_index=True,
+            key="scenarios_editor"
+        )
+        
+        # Determine which scenario is selected (only one should be selected)
+        selected_rows = edited_df[edited_df['Select'] == True]
+        if len(selected_rows) > 0:
+            st.session_state.selected_scenario_for_action = selected_rows.iloc[0]['Name']
+        else:
+            st.session_state.selected_scenario_for_action = None
+        
+        st.markdown("---")
+        st.info("**Tip**: Check the box next to a scenario to enable Load/Delete buttons")
+        
+        # Load and Delete controls
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            if st.session_state.selected_scenario_for_action:
+                st.write(f"**Selected:** {st.session_state.selected_scenario_for_action}")
+            else:
+                st.write("**Selected:** None")
+        
+        with col2:
+            if st.button("Load Scenario", type="primary", use_container_width=True, 
+                        disabled=st.session_state.selected_scenario_for_action is None):
+                if st.session_state.selected_scenario_for_action:
+                    scenario = saved_scenarios[st.session_state.selected_scenario_for_action]
+                    
+                    # Update all session state values from the scenario
+                    st.session_state.current_age = scenario.current_age
+                    st.session_state.retirement_age = scenario.retirement_age
+                    st.session_state.end_age = scenario.end_age
+                    st.session_state.current_balance = scenario.current_balance
+                    st.session_state.contrib_amount = scenario.contrib_amount
+                    st.session_state.contrib_cadence = scenario.contrib_cadence
+                    st.session_state.nominal_return_pct = scenario.nominal_return_pct
+                    st.session_state.return_stdev_pct = scenario.return_stdev_pct
+                    st.session_state.inflation_pct = scenario.inflation_pct
+                    st.session_state.fee_pct = scenario.fee_pct
+                    st.session_state.withdrawal_method = scenario.withdrawal_method
+                    st.session_state.withdrawal_pct = scenario.withdrawal_pct
+                    st.session_state.withdrawal_real_amount = scenario.withdrawal_real_amount
+                    st.session_state.withdrawal_frequency = scenario.withdrawal_frequency
+                    st.session_state.events_data = scenario.liquidity_events
+                    st.session_state.events_draft = scenario.liquidity_events.copy()
+                    st.session_state.enable_mc = scenario.enable_mc
+                    st.session_state.mc_runs = scenario.mc_runs
+                    st.session_state.enable_taxes = scenario.enable_taxes
+                    st.session_state.effective_tax_rate_pct = scenario.effective_tax_rate_pct
+                    st.session_state.inflation_enabled = getattr(scenario, 'inflation_enabled', True)
+                    
+                    st.success(f"Loaded scenario: {st.session_state.selected_scenario_for_action}")
+                    st.session_state.selected_scenario_for_action = None  # Reset selection
+                    st.session_state.page = "dashboard"
+                    st.rerun()
+        
+        with col3:
+            if st.button("Delete Scenario", use_container_width=True,
+                        disabled=st.session_state.selected_scenario_for_action is None):
+                if st.session_state.selected_scenario_for_action:
+                    deleted_name = st.session_state.selected_scenario_for_action
+                    # Remove from dict and save
+                    del saved_scenarios[deleted_name]
+                    st.session_state.saved_scenarios = saved_scenarios
+                    save_scenarios(saved_scenarios)
+                    st.session_state.selected_scenario_for_action = None  # Reset selection
+                    st.success(f"🗑️ Deleted scenario: {deleted_name}")
+                    st.rerun()
+    
+    # Back button
+    st.markdown("---")
+    if st.button("Back to Dashboard", use_container_width=False):
+        st.session_state.page = "dashboard"
+        st.rerun()
+
+
 # ============================================================================
 # MAIN APP
 # ============================================================================
 
 def main():
     st.set_page_config(
-        page_title="Harbor Stone | Retirement Planning",
+        page_title="Gordon Goss | Retirement Planning",
         page_icon="",
         layout="wide",
         initial_sidebar_state="expanded"
     )
     
-    # Custom CSS for Harbor Stone branding
+    # Custom CSS for Gordon Goss branding
     st.markdown("""
         <style>
-        /* Harbor Stone Brand Styling */
+        /* Gordon Goss Brand Styling */
         .main {
             background-color: #ffffff;
         }
@@ -813,11 +971,11 @@ def main():
         </style>
     """, unsafe_allow_html=True)
     
-    # Harbor Stone Header
+    # Gordon Goss Header
     st.markdown("""
         <div style="text-align: left; padding: 1rem 0 2rem 0;">
             <h1 style="margin: 0; color: #003d29; font-weight: 300; letter-spacing: 2px;">
-                HARBOR STONE
+                GORDON GOSS
             </h1>
             <p style="margin: 0; color: #c9a961; font-size: 1.1rem; letter-spacing: 3px; font-weight: 300;">
                 RETIREMENT PLANNING
@@ -834,6 +992,11 @@ def main():
         planning_end_age = st.session_state.get('liquidity_events_end_age', END_AGE)
         show_liquidity_events_page(planning_end_age)
         return  # Exit main function after showing liquidity events page
+    
+    # Check if we should show the scenarios management page
+    if st.session_state.page == "scenarios":
+        show_scenarios_page()
+        return  # Exit main function after showing scenarios page
     
     # Load saved scenarios
     saved_scenarios = load_scenarios()
@@ -906,15 +1069,6 @@ def main():
         help="Expected annual return before inflation"
     )
     
-    return_stdev_pct = st.sidebar.slider(
-        "Return volatility (stdev, %)",
-        min_value=0.0,
-        max_value=50.0,
-        value=RETURN_STDEV_PCT,
-        step=0.5,
-        help="Standard deviation for Monte Carlo"
-    )
-    
     inflation_pct = st.sidebar.slider(
         "Inflation (%)",
         min_value=0.0,
@@ -958,6 +1112,17 @@ def main():
             step=0.1,
             help="Percentage of prior year's ending balance to withdraw annually"
         )
+        
+        # Calculate and display the nominal annual withdrawal amount in USD
+        calculated_annual_withdrawal = current_balance * (withdrawal_pct / 100.0)
+        st.sidebar.number_input(
+            "Calculated Annual Withdrawal (Year 1)",
+            value=calculated_annual_withdrawal,
+            disabled=True,
+            format="%.2f",
+            help=f"Based on {withdrawal_pct}% of current balance (${current_balance:,.2f})"
+        )
+        
         withdrawal_real_amount = WITHDRAWAL_REAL_AMOUNT  # Keep default for scenario saving
     else:
         withdrawal_pct = WITHDRAWAL_PCT  # Keep default for scenario saving
@@ -987,7 +1152,7 @@ def main():
     
     # Liquidity Events Management Button
     st.sidebar.markdown("#### Liquidity Events")
-    if st.sidebar.button("Manage Liquidity Events", use_container_width=True):
+    if st.sidebar.button("Manage Liquidity Events", width="stretch"):
         st.session_state.page = "liquidity_events"
         st.session_state.liquidity_events_end_age = end_age
         st.rerun()
@@ -1009,21 +1174,42 @@ def main():
         index=0
     ) == "Real"
     
+    # Initialize session state for persistent settings across page navigation
+    if 'enable_mc' not in st.session_state:
+        st.session_state.enable_mc = ENABLE_MC
+    if 'mc_runs' not in st.session_state:
+        st.session_state.mc_runs = MC_RUNS
+    if 'effective_tax_rate_pct' not in st.session_state:
+        st.session_state.effective_tax_rate_pct = 0.0
+    
     enable_mc = st.sidebar.checkbox(
         "Enable Monte Carlo",
-        value=ENABLE_MC,
+        value=st.session_state.enable_mc,
+        key="enable_mc_checkbox",
         help="Run probabilistic simulation"
     )
+    st.session_state.enable_mc = enable_mc
     
-    mc_runs = MC_RUNS
+    mc_runs = st.session_state.mc_runs
     if enable_mc:
         mc_runs = st.sidebar.slider(
             "Monte Carlo runs",
             min_value=100,
             max_value=5000,
-            value=MC_RUNS,
+            value=st.session_state.mc_runs,
+            key="mc_runs_slider",
             step=100
         )
+        st.session_state.mc_runs = mc_runs
+    
+    return_stdev_pct = st.sidebar.slider(
+        "Return volatility (stdev, %)",
+        min_value=0.0,
+        max_value=50.0,
+        value=RETURN_STDEV_PCT,
+        step=0.5,
+        help="Standard deviation for Monte Carlo simulation"
+    )
     
     # Withdrawal tax rate
     st.sidebar.markdown("#### Withdrawal Tax Rate")
@@ -1031,10 +1217,12 @@ def main():
         "Withdrawal tax rate (%)",
         min_value=0.0,
         max_value=100.0,
-        value=0.0,
+        value=st.session_state.effective_tax_rate_pct,
+        key="tax_rate_input",
         step=0.5,
         help="Tax rate applied to retirement withdrawals (0% = Cayman Islands, tax-free)"
     )
+    st.session_state.effective_tax_rate_pct = effective_tax_rate_pct
     
     enable_taxes = effective_tax_rate_pct > 0
     
@@ -1047,7 +1235,39 @@ def main():
         value="Scenario A",
         key="scenario_a_name"
     )
-    if st.sidebar.button("Save Scenario", key="save_scenario_btn"):
+    
+    # Add compact styling for sidebar buttons only
+    st.sidebar.markdown("""
+    <style>
+    /* Compact sidebar scenario buttons */
+    div[data-testid="stSidebar"] button[kind="primary"],
+    div[data-testid="stSidebar"] button[kind="secondary"] {
+        font-size: 11px !important;
+        padding: 0.5rem 0.3rem !important;
+        line-height: 1.2 !important;
+        min-height: 2.5rem !important;
+        max-height: 2.5rem !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: clip !important;
+        width: 100% !important;
+    }
+    div[data-testid="stSidebar"] button p {
+        font-size: 11px !important;
+        margin: 0 !important;
+        white-space: nowrap !important;
+    }
+    div[data-testid="stSidebar"] div[data-testid="column"] {
+        padding: 0 2px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    save_clicked = st.sidebar.button("Save Scenario", key="save_scenario_btn", use_container_width=True)
+    manage_clicked = st.sidebar.button("Manage Scenarios", key="manage_scenarios_btn", use_container_width=True)
+    
+    # Handle Save Scenario
+    if save_clicked:
         if len(saved_scenarios) >= 5 and scenario_a_name not in saved_scenarios:
             st.sidebar.warning("Maximum 5 scenarios allowed. Delete one to save a new scenario.")
         else:
@@ -1078,49 +1298,65 @@ def main():
             saved_scenarios[scenario_a_name] = scenario_a
             save_scenarios(saved_scenarios)
             st.sidebar.success(f"Saved '{scenario_a_name}'!")
-
-    # Load scenario
-    load_names = [name for name in saved_scenarios.keys()]
-    selected_load = st.sidebar.selectbox("Load Scenario", ["<none>"] + load_names, key="load_scenario_btn")
-    if selected_load != "<none>":
-        loaded = saved_scenarios[selected_load]
-        # Set all parameters from loaded scenario
-        st.session_state.scenario_a_name = loaded.name
-        st.session_state.current_age = loaded.current_age
-        st.session_state.retirement_age = loaded.retirement_age
-        st.session_state.end_age = loaded.end_age
-        st.session_state.current_balance = loaded.current_balance
-        st.session_state.contrib_amount = loaded.contrib_amount
-        st.session_state.contrib_cadence = loaded.contrib_cadence if loaded.contrib_cadence in ("Monthly", "Annual") else "Annual"
-        st.session_state.nominal_return_pct = loaded.nominal_return_pct
-        st.session_state.return_stdev_pct = loaded.return_stdev_pct
-        st.session_state.inflation_pct = loaded.inflation_pct
-        st.session_state.fee_pct = loaded.fee_pct
-        st.session_state.withdrawal_method = loaded.withdrawal_method if loaded.withdrawal_method in ("Fixed % of prior-year end balance", "Fixed real dollars") else "Fixed % of prior-year end balance"
-        st.session_state.withdrawal_pct = loaded.withdrawal_pct
-        st.session_state.withdrawal_real_amount = loaded.withdrawal_real_amount
-        st.session_state.withdrawal_frequency = loaded.withdrawal_frequency if loaded.withdrawal_frequency in ("Annual", "Monthly") else "Annual"
-        st.session_state.effective_tax_rate_pct = loaded.effective_tax_rate_pct
-        st.session_state.enable_mc = loaded.enable_mc
-        st.session_state.mc_runs = loaded.mc_runs
-        st.session_state.enable_taxes = loaded.enable_taxes
-        st.session_state.events_data = loaded.liquidity_events
-        st.sidebar.success(f"Loaded '{selected_load}'!")
+    
+    # Handle Manage Scenarios
+    if manage_clicked:
+        st.session_state.page = "scenarios"
+        st.rerun()
 
     # Compare scenarios section
     st.sidebar.markdown("#### Compare Scenarios")
     compare_names = [name for name in saved_scenarios.keys()]
     compare_a = st.sidebar.selectbox("Scenario 1", ["<none>"] + compare_names, key="compare_a")
     compare_b = st.sidebar.selectbox("Scenario 2", ["<none>"] + [n for n in compare_names if n != compare_a], key="compare_b")
-    compare_triggered = st.sidebar.button("Compare Scenarios", key="compare_btn")
+    
+    # Initialize comparison state in session_state if not present
+    if 'comparison_active' not in st.session_state:
+        st.session_state.comparison_active = False
+    if 'comparison_scenario_a' not in st.session_state:
+        st.session_state.comparison_scenario_a = None
+    if 'comparison_scenario_b' not in st.session_state:
+        st.session_state.comparison_scenario_b = None
+    
+    # Compare and Clear buttons stacked vertically
+    compare_triggered = st.sidebar.button("Compare Scenarios", key="compare_btn", use_container_width=True)
+    # Always show clear button but disable when not comparing
+    clear_triggered = st.sidebar.button("Clear Scenarios", key="clear_comparison_btn", use_container_width=True, 
+                                         disabled=not st.session_state.comparison_active)
 
-    compare_scenarios = False
+    # Handle Clear button FIRST (before Compare updates state)
+    if clear_triggered and st.session_state.comparison_active:
+        st.session_state.comparison_active = False
+        st.session_state.comparison_scenario_a = None
+        st.session_state.comparison_scenario_b = None
+        st.rerun()
+    
+    # Update comparison state when Compare button is clicked
+    if compare_triggered:
+        if compare_a != "<none>" and compare_b != "<none>":
+            st.session_state.comparison_active = True
+            st.session_state.comparison_scenario_a = compare_a
+            st.session_state.comparison_scenario_b = compare_b
+            st.rerun()
+        else:
+            # Clear comparison if button clicked but invalid selection
+            st.session_state.comparison_active = False
+            st.session_state.comparison_scenario_a = None
+            st.session_state.comparison_scenario_b = None
+    
+    # Use persistent comparison state
+    compare_scenarios = st.session_state.comparison_active
     scenario_a = None
     scenario_b = None
-    if compare_triggered and compare_a != "<none>" and compare_b != "<none>":
-        compare_scenarios = True
-        scenario_a = saved_scenarios[compare_a]
-        scenario_b = saved_scenarios[compare_b]
+    if compare_scenarios:
+        if (st.session_state.comparison_scenario_a in saved_scenarios and 
+            st.session_state.comparison_scenario_b in saved_scenarios):
+            scenario_a = saved_scenarios[st.session_state.comparison_scenario_a]
+            scenario_b = saved_scenarios[st.session_state.comparison_scenario_b]
+        else:
+            # Scenarios no longer exist, clear comparison
+            st.session_state.comparison_active = False
+            compare_scenarios = False
     
     # Tax Rate Reference Legend
     st.sidebar.markdown("---")
@@ -1160,51 +1396,81 @@ def main():
     
     # Admin Panel (placeholder for future advanced features)
     st.sidebar.markdown("---")
-    with st.sidebar.expander("Admin Panel"):
-        st.markdown("""
-        **Advanced Settings & Tools**
+    with st.sidebar.expander("Admin Panel", expanded=False):
+        st.markdown(f"""
+        **Version {__version__} - October 21, 2025**
         
-        This panel is reserved for future administrative features:
+        **Recent Updates (v2.1.0):**
+        
+        **UI/UX Improvements:**
+        - Age/Year toggle on projection graphs (X-axis switch)
+        - Annual Cashflow Analysis - now open by default
+        - Debug Monitor - now closed by default
+        - Admin Panel - now closed by default
+        
+        **Liquidity Events:**
+        - Auto-populate end age for one-time events
+        - Simplified event types (Credit/Debit)
+        - Recurrence field moved next to Type for better UX
+        - Removed emojis from UI elements
+        
+        **Bug Fixes:**
+        - First Shortfall Age detection now works correctly
+        - Fixed calculation to properly detect negative balances
+        
+        **Notes:**
+        - Graph displays end-of-year balances (industry standard)
+        - Percentage-based withdrawals adjust with balance
+        - Use "Fixed real dollars" to see First Shortfall Age
+        
+        **Future Features:**
         - Batch scenario imports/exports
         - Advanced debugging tools
         - Custom calculation overrides
         - Data integrity checks
-        - System configuration
-        
-        *Coming soon in a future release.*
         """)
     
-    # Build current scenario A
-    scenario_a = Scenario(
-        name=scenario_a_name,
-        current_age=current_age,
-        retirement_age=retirement_age,
-        end_age=end_age,
-        current_balance=current_balance,
-        contrib_amount=contrib_amount,
-        contrib_cadence=contrib_cadence,
-        nominal_return_pct=nominal_return_pct,
-        return_stdev_pct=return_stdev_pct,
-        inflation_pct=inflation_pct,
-        fee_pct=fee_pct,
-        withdrawal_method=withdrawal_method,
-        withdrawal_pct=withdrawal_pct,
-        withdrawal_real_amount=withdrawal_real_amount,
-        withdrawal_frequency=withdrawal_frequency,
-        liquidity_events=[e.to_dict() for e in liquidity_events],
-        enable_mc=enable_mc,
-        mc_runs=mc_runs,
-        enable_taxes=enable_taxes,
-        effective_tax_rate_pct=effective_tax_rate_pct
-    )
+    # Build current scenario A (only if not comparing - otherwise use saved scenario)
+    if not compare_scenarios:
+        scenario_a = Scenario(
+            name=scenario_a_name,
+            current_age=current_age,
+            retirement_age=retirement_age,
+            end_age=end_age,
+            current_balance=current_balance,
+            contrib_amount=contrib_amount,
+            contrib_cadence=contrib_cadence,
+            nominal_return_pct=nominal_return_pct,
+            return_stdev_pct=return_stdev_pct,
+            inflation_pct=inflation_pct,
+            fee_pct=fee_pct,
+            withdrawal_method=withdrawal_method,
+            withdrawal_pct=withdrawal_pct,
+            withdrawal_real_amount=withdrawal_real_amount,
+            withdrawal_frequency=withdrawal_frequency,
+            liquidity_events=[e.to_dict() for e in liquidity_events],
+            enable_mc=enable_mc,
+            mc_runs=mc_runs,
+            enable_taxes=enable_taxes,
+            effective_tax_rate_pct=effective_tax_rate_pct,
+            inflation_enabled=inflation_enabled
+        )
+    
+    # Get liquidity events for scenario A
+    if compare_scenarios:
+        liquidity_events_a = [LiquidityEvent.from_dict(e) for e in scenario_a.liquidity_events]
+    else:
+        liquidity_events_a = liquidity_events
     
     # Calculate timeline for Scenario A
-    timeline_a, metrics_a = build_timeline(scenario_a, liquidity_events, show_real)
+    timeline_a, metrics_a = build_timeline(scenario_a, liquidity_events_a, show_real)
     
-    # Monte Carlo for Scenario A
+    # Monte Carlo for Scenario A (use scenario's own MC settings when comparing)
     mc_results_a = None
-    if enable_mc:
-        mc_results_a = run_monte_carlo(scenario_a, liquidity_events, mc_runs)
+    mc_enabled_a = scenario_a.enable_mc if compare_scenarios else enable_mc
+    mc_runs_a = scenario_a.mc_runs if compare_scenarios else mc_runs
+    if mc_enabled_a:
+        mc_results_a = run_monte_carlo(scenario_a, liquidity_events_a, mc_runs_a)
         metrics_a.update(mc_results_a)
     
     # Calculate for Scenario B if comparing
@@ -1291,10 +1557,10 @@ def main():
             # Safe Withdrawal Rate Button
             col_swr1, col_swr2, col_swr3 = st.columns([1, 1, 1])
             with col_swr2:
-                if st.button("Calculate Safe Withdrawal Rate", use_container_width=True):
+                if st.button("Calculate Safe Withdrawal Rate", width="stretch"):
                     if scenario_a.withdrawal_method == "Fixed % of prior-year end balance":
                         with st.spinner("Calculating optimal withdrawal rate..."):
-                            swr = solve_safe_withdrawal_rate(scenario_a, liquidity_events)
+                            swr = solve_safe_withdrawal_rate(scenario_a, liquidity_events_a)
                             st.success(f"**Safe Withdrawal Rate: {swr:.2f}%**")
                             st.caption("Maximum withdrawal rate where portfolio remains solvent")
                     else:
@@ -1325,36 +1591,56 @@ def main():
             comp_data[scenario_b.name].append(
                 f"{metrics_b['probability_no_shortfall']*100:.1f}%" if metrics_b['probability_no_shortfall'] is not None else "N/A"
             )
-        # Pad columns to match metric length
-        for key in [scenario_a.name, scenario_b.name]:
-            while len(comp_data[key]) < len(comp_data["Metric"]):
+        
+        # Ensure all columns have the same length
+        max_len = max(len(comp_data["Metric"]), len(comp_data[scenario_a.name]), len(comp_data[scenario_b.name]))
+        for key in comp_data.keys():
+            while len(comp_data[key]) < max_len:
                 comp_data[key].append("N/A")
+        
         st.dataframe(pd.DataFrame(comp_data), width="stretch", hide_index=True)
     
     # Main Chart
     st.markdown("## Portfolio Balance Projection")
     
+    # Add X-axis toggle (Age vs Year)
+    col_left, col_right = st.columns([4, 1])
+    with col_right:
+        x_axis_mode = st.radio(
+            "X-Axis:",
+            options=["Age", "Year"],
+            index=0,
+            horizontal=True,
+            key="x_axis_toggle",
+            help="Switch between Age and Calendar Year"
+        )
+    
+    # Calculate year values (assuming current age = current year 2025)
+    from datetime import datetime
+    current_year = datetime.now().year
+    age_to_year_offset = current_year - current_age
+    
     # Prepare event grouping for chart (needed before creating traces)
-    # Separate one-time and recurring events
+    # Separate one-time and recurring events FOR SCENARIO A
     one_time_events = []
     recurring_events = []
     
-    for event in liquidity_events:
+    for event in liquidity_events_a:
         if not event.enabled:
             continue
-        if "One-time" in event.type or event.recurrence == "One-time":
+        if event.recurrence == "One-time":
             one_time_events.append(event)
         else:
             recurring_events.append(event)
     
-    # Group ALL events (one-time + recurring) by age for hover information
+    # Group ALL events (one-time + recurring) by age for hover information FOR SCENARIO A
     all_events_by_age = {}
-    for event in liquidity_events:
+    for event in liquidity_events_a:
         if not event.enabled:
             continue
             
         # Determine which ages this event affects
-        if "One-time" in event.type or event.recurrence == "One-time":
+        if event.recurrence == "One-time":
             ages_affected = [event.start_age]
         else:
             ages_affected = range(event.start_age, event.end_age + 1)
@@ -1372,6 +1658,45 @@ def main():
             one_time_by_age[age] = []
         one_time_by_age[age].append(event)
     
+    # Prepare event grouping for SCENARIO B if comparing
+    one_time_events_b = []
+    recurring_events_b = []
+    all_events_by_age_b = {}
+    one_time_by_age_b = {}
+    
+    if compare_scenarios and scenario_b:
+        events_b_list = [LiquidityEvent.from_dict(e) for e in scenario_b.liquidity_events]
+        
+        for event in events_b_list:
+            if not event.enabled:
+                continue
+            if event.recurrence == "One-time":
+                one_time_events_b.append(event)
+            else:
+                recurring_events_b.append(event)
+        
+        # Group ALL events by age for hover
+        for event in events_b_list:
+            if not event.enabled:
+                continue
+            
+            if event.recurrence == "One-time":
+                ages_affected = [event.start_age]
+            else:
+                ages_affected = range(event.start_age, event.end_age + 1)
+            
+            for age in ages_affected:
+                if age not in all_events_by_age_b:
+                    all_events_by_age_b[age] = []
+                all_events_by_age_b[age].append(event)
+        
+        # Group ONE-TIME events by age for markers
+        for event in one_time_events_b:
+            age = event.start_age
+            if age not in one_time_by_age_b:
+                one_time_by_age_b[age] = []
+            one_time_by_age_b[age].append(event)
+    
     fig = go.Figure()
     
     # Scenario A
@@ -1384,12 +1709,19 @@ def main():
         age = int(row['age'])
         balance = row[balance_col]
         
-        # Start with base hover text
-        hover_parts = [
-            f"<b>Portfolio Balance</b>",
-            f"Age: {age}",
-            f"Balance ({value_type}): ${balance:,.0f}"
-        ]
+        # Start with base hover text - include scenario name if comparing
+        if compare_scenarios and scenario_b:
+            hover_parts = [
+                f"<b>═══ {scenario_a.name.upper()} ═══</b>",
+                f"Age: {age}",
+                f"Balance ({value_type}): ${balance:,.0f}"
+            ]
+        else:
+            hover_parts = [
+                f"<b>Portfolio Balance</b>",
+                f"Age: {age}",
+                f"Balance ({value_type}): ${balance:,.0f}"
+            ]
         
         # Add event information if there are any events at this age
         if age in all_events_by_age:
@@ -1402,8 +1734,10 @@ def main():
             
             for event in events_at_age:
                 amount = event.amount
+                recur_label = event.recurrence
                 if event.recurrence == "Monthly":
                     amount *= 12
+                    recur_label = "Annual"  # Display as Annual since we show the yearly total
                 
                 if amount > 0:
                     total_inflow += amount
@@ -1411,7 +1745,7 @@ def main():
                     total_outflow += amount
                 
                 event_type = "↑" if amount > 0 else "↓"
-                recur_text = f" ({event.recurrence})" if event.recurrence != "One-time" else ""
+                recur_text = f" ({recur_label})" if event.recurrence != "One-time" else ""
                 hover_parts.append(f"  {event_type} {event.label}: ${abs(amount):,.0f}{recur_text}")
             
             # Add net summary
@@ -1425,8 +1759,14 @@ def main():
         
         hover_texts.append("<br>".join(hover_parts))
     
+    # Prepare x-axis values based on toggle
+    if x_axis_mode == "Year":
+        x_values_a = [age + age_to_year_offset for age in timeline_a['age']]
+    else:
+        x_values_a = timeline_a['age']
+    
     fig.add_trace(go.Scatter(
-        x=timeline_a['age'],
+        x=x_values_a,
         y=timeline_a[balance_col],
         mode='lines',
         name=f"{scenario_a.name} ({value_type})",
@@ -1439,8 +1779,16 @@ def main():
     if enable_mc and mc_results_a and not compare_scenarios:
         ages = list(range(scenario_a.current_age, scenario_a.end_age + 1))
         
+        # Convert to years if needed
+        if x_axis_mode == "Year":
+            x_mc_values = [age + age_to_year_offset for age in ages]
+        else:
+            x_mc_values = ages
+        
+        x_label = "Year" if x_axis_mode == "Year" else "Age"
+        
         fig.add_trace(go.Scatter(
-            x=ages,
+            x=x_mc_values,
             y=mc_results_a['p90_path'],
             mode='lines',
             name='90th Percentile',
@@ -1448,14 +1796,14 @@ def main():
             showlegend=True,
             hovertemplate=(
                 "<b>90th Percentile</b><br>" +
-                "Age: %{x}<br>" +
+                f"{x_label}: %{{x}}<br>" +
                 f"Balance ({value_type}): $%{{y:,.0f}}<br>" +
                 "<extra></extra>"
             )
         ))
         
         fig.add_trace(go.Scatter(
-            x=ages,
+            x=x_mc_values,
             y=mc_results_a['p10_path'],
             mode='lines',
             name='10th Percentile',
@@ -1465,7 +1813,7 @@ def main():
             showlegend=True,
             hovertemplate=(
                 "<b>10th Percentile</b><br>" +
-                "Age: %{x}<br>" +
+                f"{x_label}: %{{x}}<br>" +
                 f"Balance ({value_type}): $%{{y:,.0f}}<br>" +
                 "<extra></extra>"
             )
@@ -1473,28 +1821,88 @@ def main():
     
     # Scenario B
     if compare_scenarios and timeline_b is not None and scenario_b is not None:
+        # Build custom hover text for scenario B including its events
+        hover_texts_b = []
+        for _, row in timeline_b.iterrows():
+            age = int(row['age'])
+            balance = row[balance_col]
+            
+            hover_parts_b = [
+                f"<b>═══ {scenario_b.name.upper()} ═══</b>",
+                f"Age: {age}",
+                f"Balance ({value_type}): ${balance:,.0f}"
+            ]
+            
+            # Add event information if there are any events at this age for scenario B
+            if age in all_events_by_age_b:
+                events_at_age_b = all_events_by_age_b[age]
+                hover_parts_b.append("")
+                hover_parts_b.append("<b>Liquidity Events:</b>")
+                
+                total_inflow = 0.0
+                total_outflow = 0.0
+                
+                for event in events_at_age_b:
+                    amount = event.amount
+                    recur_label = event.recurrence
+                    if event.recurrence == "Monthly":
+                        amount *= 12
+                        recur_label = "Annual"  # Display as Annual since we show the yearly total
+                    
+                    if amount > 0:
+                        total_inflow += amount
+                    else:
+                        total_outflow += amount
+                    
+                    event_type = "↑" if amount > 0 else "↓"
+                    recur_text = f" ({recur_label})" if event.recurrence != "One-time" else ""
+                    hover_parts_b.append(f"  {event_type} {event.label}: ${abs(amount):,.0f}{recur_text}")
+                
+                # Add net summary
+                net_amount = total_inflow + total_outflow
+                if net_amount > 0:
+                    hover_parts_b.append(f"  <b>Net: +${net_amount:,.0f}</b>")
+                elif net_amount < 0:
+                    hover_parts_b.append(f"  <b>Net: -${abs(net_amount):,.0f}</b>")
+                else:
+                    hover_parts_b.append(f"  <b>Net: $0</b>")
+            
+            hover_texts_b.append("<br>".join(hover_parts_b))
+        
+        # Prepare x-axis for scenario B
+        if x_axis_mode == "Year":
+            x_values_b = [age + age_to_year_offset for age in timeline_b['age']]
+        else:
+            x_values_b = timeline_b['age']
+        
         fig.add_trace(go.Scatter(
-            x=timeline_b['age'],
+            x=x_values_b,
             y=timeline_b[balance_col],
             mode='lines',
             name=f"{scenario_b.name} ({value_type})",
             line=dict(color='#2c2c2c', width=2, dash='dash'),
-            hovertemplate=(
-                f"<b>{scenario_b.name}</b><br>" +
-                "Age: %{x}<br>" +
-                f"Balance ({value_type}): $%{{y:,.0f}}<br>" +
-                "<extra></extra>"
-            )
+            hovertext=hover_texts_b,
+            hovertemplate="%{hovertext}<extra></extra>"
         ))
     
     # Retirement age vertical line
+    retirement_x = retirement_age + age_to_year_offset if x_axis_mode == "Year" else retirement_age
     fig.add_vline(
-        x=retirement_age,
+        x=retirement_x,
         line_dash="dash",
         line_color="#c9a961",
         annotation_text="Retirement",
         annotation_position="top",
         annotation_font_color="#003d29"
+    )
+    
+    # Add zero line to clearly show when portfolio goes negative
+    fig.add_hline(
+        y=0,
+        line_dash="solid",
+        line_color="#8b2635",
+        line_width=1,
+        opacity=0.5
     )
     
     # Plot ONE marker per age for ONE-TIME events only
@@ -1526,8 +1934,12 @@ def main():
         # Simple hover for the marker (detailed info comes from portfolio line hover)
         event_names = ", ".join([e.label for e in events])
         
+        # Calculate x position based on mode
+        marker_x = age + age_to_year_offset if x_axis_mode == "Year" else age
+        x_label_text = "Year" if x_axis_mode == "Year" else "Age"
+        
         fig.add_trace(go.Scatter(
-            x=[age],
+            x=[marker_x],
             y=[balance_on_line],
             mode='markers+text',
             name=label_text,
@@ -1540,7 +1952,7 @@ def main():
             text=[label_text],
             textposition='top center',
             textfont=dict(size=9, color='#003d29', family="Helvetica Neue, Arial, sans-serif"),
-            hovertemplate=f"<b>{event_names}</b><br>Age {age}<extra></extra>",
+            hovertemplate=f"<b>{event_names}</b><br>{x_label_text} {marker_x}<extra></extra>",
             hoverlabel=dict(
                 bgcolor='#f8f8f8',
                 font_size=12,
@@ -1550,17 +1962,182 @@ def main():
             showlegend=False
         ))
     
+    # Plot markers for Scenario B one-time events
+    if compare_scenarios and timeline_b is not None:
+        for age, events in one_time_by_age_b.items():
+            age_row = timeline_b[timeline_b['age'] == age]
+            if age_row.empty:
+                continue
+                
+            # Get the balance at this age on scenario B's line
+            balance_on_line = age_row.iloc[0][balance_col]
+            
+            # Calculate total for one-time events at this age
+            total_amount = sum(e.amount for e in events)
+            
+            # Determine marker color (use slightly different colors for scenario B)
+            if total_amount > 0:
+                marker_color = '#ffd700'  # Bright gold for inflow
+            elif total_amount < 0:
+                marker_color = '#dc143c'  # Crimson for outflow
+            else:
+                marker_color = '#808080'  # Gray
+            
+            # Create label
+            if len(events) == 1:
+                label_text = events[0].label[:12]
+            else:
+                label_text = f"{len(events)} Events"
+            
+            # Simple hover for the marker
+            event_names = ", ".join([e.label for e in events])
+            
+            # Calculate x position based on mode
+            marker_x_b = age + age_to_year_offset if x_axis_mode == "Year" else age
+            x_label_text = "Year" if x_axis_mode == "Year" else "Age"
+            
+            fig.add_trace(go.Scatter(
+                x=[marker_x_b],
+                y=[balance_on_line],
+                mode='markers+text',
+                name=f"{label_text} (B)",
+                marker=dict(
+                    size=14,
+                    color=marker_color,
+                    symbol='square',  # Use square for scenario B to differentiate
+                    line=dict(color='#2c2c2c', width=2)
+                ),
+                text=[label_text],
+                textposition='bottom center',
+                textfont=dict(size=9, color='#2c2c2c', family="Helvetica Neue, Arial, sans-serif"),
+                hovertemplate=f"<b>{scenario_b.name}: {event_names}</b><br>{x_label_text} {marker_x_b}<extra></extra>",
+                hoverlabel=dict(
+                    bgcolor='#f0f0f0',
+                    font_size=12,
+                    font_family="Helvetica Neue, Arial, sans-serif",
+                    bordercolor=marker_color
+                ),
+                showlegend=False
+            ))
+    
     # Add recurring events legend box (annotation)
-    if recurring_events:
+    # When comparing scenarios, create TWO separate legend boxes for clarity
+    if compare_scenarios and scenario_b and (recurring_events or recurring_events_b):
+        # SCENARIO A LEGEND (Left side)
+        if recurring_events:
+            legend_lines_a = [f"<b>{scenario_a.name}</b>", "<b>Recurring Events:</b>"]
+            
+            # Separate credits and debits
+            credits = [e for e in recurring_events if e.amount > 0]
+            debits = [e for e in recurring_events if e.amount < 0]
+            
+            if credits:
+                legend_lines_a.append("<b>Credits:</b>")
+                for event in credits:
+                    amount = event.amount
+                    freq = "yr"  # Always show per year since we display annual totals
+                    if event.recurrence == "Monthly":
+                        amount *= 12
+                    amount_str = f"${abs(amount):,.0f}"
+                    legend_lines_a.append(f"  + {event.label}: {amount_str}/{freq}")
+                    legend_lines_a.append(f"    (Age {event.start_age}-{event.end_age})")
+            
+            if debits:
+                legend_lines_a.append("<b>Debits:</b>")
+                for event in debits:
+                    amount = event.amount
+                    freq = "yr"  # Always show per year since we display annual totals
+                    if event.recurrence == "Monthly":
+                        amount *= 12
+                    amount_str = f"${abs(amount):,.0f}"
+                    legend_lines_a.append(f"  - {event.label}: {amount_str}/{freq}")
+                    legend_lines_a.append(f"    (Age {event.start_age}-{event.end_age})")
+            
+            fig.add_annotation(
+                xref="paper", yref="paper",
+                x=0.02, y=0.02,
+                xanchor='left', yanchor='bottom',
+                text="<br>".join(legend_lines_a),
+                showarrow=False,
+                font=dict(size=10, family="Helvetica Neue, Arial, sans-serif", color="#2c2c2c"),
+                bgcolor='rgba(255, 255, 255, 0.9)',
+                bordercolor='#003d29',
+                borderwidth=2,
+                borderpad=8,
+                align='left'
+            )
+        
+        # SCENARIO B LEGEND (Right side)
+        if recurring_events_b:
+            legend_lines_b = [f"<b>{scenario_b.name}</b>", "<b>Recurring Events:</b>"]
+            
+            # Separate credits and debits for scenario B
+            credits_b = [e for e in recurring_events_b if e.amount > 0]
+            debits_b = [e for e in recurring_events_b if e.amount < 0]
+            
+            if credits_b:
+                legend_lines_b.append("<b>Credits:</b>")
+                for event in credits_b:
+                    amount = event.amount
+                    freq = "yr"  # Always show per year since we display annual totals
+                    if event.recurrence == "Monthly":
+                        amount *= 12
+                    amount_str = f"${abs(amount):,.0f}"
+                    legend_lines_b.append(f"  + {event.label}: {amount_str}/{freq}")
+                    legend_lines_b.append(f"    (Age {event.start_age}-{event.end_age})")
+            
+            if debits_b:
+                legend_lines_b.append("<b>Debits:</b>")
+                for event in debits_b:
+                    amount = event.amount
+                    freq = "yr"  # Always show per year since we display annual totals
+                    if event.recurrence == "Monthly":
+                        amount *= 12
+                    amount_str = f"${abs(amount):,.0f}"
+                    legend_lines_b.append(f"  - {event.label}: {amount_str}/{freq}")
+                    legend_lines_b.append(f"    (Age {event.start_age}-{event.end_age})")
+            
+            fig.add_annotation(
+                xref="paper", yref="paper",
+                x=0.98, y=0.02,
+                xanchor='right', yanchor='bottom',
+                text="<br>".join(legend_lines_b),
+                showarrow=False,
+                font=dict(size=10, family="Helvetica Neue, Arial, sans-serif", color="#2c2c2c"),
+                bgcolor='rgba(255, 255, 255, 0.9)',
+                bordercolor='#2c2c2c',
+                borderwidth=2,
+                borderpad=8,
+                align='left'
+            )
+    
+    # Single scenario legend (original behavior)
+    elif recurring_events and not compare_scenarios:
         legend_lines = ["<b>Recurring Events:</b>"]
-        for event in recurring_events:
-            amount = event.amount
-            if event.recurrence == "Monthly":
-                amount *= 12
-            amount_str = f"${abs(amount):,.0f}"
-            direction = "↑" if amount > 0 else "↓"
-            freq = "mo" if event.recurrence == "Monthly" else "yr"
-            legend_lines.append(f"{direction} {event.label}: {amount_str}/{freq} (Age {event.start_age}-{event.end_age})")
+        
+        # Separate credits and debits
+        credits = [e for e in recurring_events if e.amount > 0]
+        debits = [e for e in recurring_events if e.amount < 0]
+        
+        if credits:
+            legend_lines.append("<b>Credits:</b>")
+            for event in credits:
+                amount = event.amount
+                freq = "yr"  # Always show per year since we display annual totals
+                if event.recurrence == "Monthly":
+                    amount *= 12
+                amount_str = f"${abs(amount):,.0f}"
+                legend_lines.append(f"  + {event.label}: {amount_str}/{freq} (Age {event.start_age}-{event.end_age})")
+        
+        if debits:
+            legend_lines.append("<b>Debits:</b>")
+            for event in debits:
+                amount = event.amount
+                freq = "yr"  # Always show per year since we display annual totals
+                if event.recurrence == "Monthly":
+                    amount *= 12
+                amount_str = f"${abs(amount):,.0f}"
+                legend_lines.append(f"  - {event.label}: {amount_str}/{freq} (Age {event.start_age}-{event.end_age})")
         
         fig.add_annotation(
             xref="paper", yref="paper",
@@ -1576,8 +2153,10 @@ def main():
             align='left'
         )
     
+    x_axis_title_text = "Year" if x_axis_mode == "Year" else "Age"
+    
     fig.update_layout(
-        xaxis_title="Age",
+        xaxis_title=x_axis_title_text,
         yaxis_title=f"Portfolio Balance ({CURRENCY})",
         hovermode='x unified',  # Show all traces at same x position
         height=550,  # Increased height to accommodate labels
@@ -1586,7 +2165,11 @@ def main():
         paper_bgcolor='white',
         font=dict(family="Helvetica Neue, Arial, sans-serif", color="#2c2c2c"),
         xaxis=dict(gridcolor='#e0e0e0', showgrid=True),
-        yaxis=dict(gridcolor='#e0e0e0', showgrid=True),
+        yaxis=dict(
+            gridcolor='#e0e0e0', 
+            showgrid=True,
+            rangemode='normal'  # Allow automatic ranging including negative values
+        ),
         legend=dict(
             bgcolor='rgba(248, 248, 248, 0.9)',
             bordercolor='#e0e0e0',
@@ -1595,66 +2178,84 @@ def main():
         margin=dict(t=40, b=40, l=60, r=20)  # Add margin to prevent cutoff
     )
     
-    st.plotly_chart(fig, config={'displayModeBar': True}, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True})
     
     # Cashflow Chart - Improved Design
     st.markdown("## Annual Cashflow Analysis")
-    with st.expander("View Detailed Cashflow Breakdown", expanded=False):
+    with st.expander("View Detailed Cashflow Breakdown", expanded=True):
         st.markdown("**This chart shows all cash inflows and outflows by year.**")
         
         cashflow_fig = go.Figure()
         
+        # Use same x-axis values as main chart
+        x_values_cashflow = x_values_a  # Reuse the calculated values from main chart
+        x_label_cashflow = "Year" if x_axis_mode == "Year" else "Age"
+        
         # Contributions (green for inflows)
         cashflow_fig.add_trace(go.Bar(
-            x=timeline_a['age'],
+            x=x_values_cashflow,
             y=timeline_a['contributions'],
             name='Contributions',
             marker_color='#00875a',  # Brighter green for better contrast
-            hovertemplate='<b>Contributions</b><br>Age: %{x}<br>Amount: $%{y:,.0f}<extra></extra>'
+            hovertemplate=f'<b>Contributions</b><br>{x_label_cashflow}: %{{x}}<br>Amount: $%{{y:,.0f}}<extra></extra>'
         ))
         
         # Withdrawals (red/burgundy for outflows)
         cashflow_fig.add_trace(go.Bar(
-            x=timeline_a['age'],
+            x=x_values_cashflow,
             y=-timeline_a['withdrawals'],
             name='Withdrawals',
             marker_color='#8b2635',  # Burgundy/wine red for contrast
-            hovertemplate='<b>Withdrawals</b><br>Age: %{x}<br>Amount: -$%{customdata:,.0f}<extra></extra>',
+            hovertemplate=f'<b>Withdrawals</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
             customdata=timeline_a['withdrawals']
         ))
         
-        # Net Liquidity Events (gold - Harbor Stone accent)
+        # Liquidity Events - split into inflows (positive) and outflows (negative)
+        liquidity_inflows = timeline_a['liquidity_net'].clip(lower=0)  # Positive values only
+        liquidity_outflows = timeline_a['liquidity_net'].clip(upper=0)  # Negative values only
+        
+        # Liquidity Inflows (gold - Gordon Goss accent)
         cashflow_fig.add_trace(go.Bar(
-            x=timeline_a['age'],
-            y=timeline_a['liquidity_net'],
-            name='Net Liquidity Events',
-            marker_color='#c9a961',  # Harbor Stone gold
-            hovertemplate='<b>Liquidity Events</b><br>Age: %{x}<br>Amount: $%{y:,.0f}<extra></extra>'
+            x=x_values_cashflow,
+            y=liquidity_inflows,
+            name='Liquidity Inflows',
+            marker_color='#c9a961',  # Gordon Goss gold
+            hovertemplate=f'<b>Liquidity Inflows</b><br>{x_label_cashflow}: %{{x}}<br>Amount: $%{{y:,.0f}}<extra></extra>'
+        ))
+        
+        # Liquidity Outflows (darker gold/bronze)
+        cashflow_fig.add_trace(go.Bar(
+            x=x_values_cashflow,
+            y=liquidity_outflows,
+            name='Liquidity Outflows',
+            marker_color='#8b7355',  # Bronze/brown
+            hovertemplate=f'<b>Liquidity Outflows</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
+            customdata=abs(liquidity_outflows)
         ))
         
         # Fees (dark gray)
         cashflow_fig.add_trace(go.Bar(
-            x=timeline_a['age'],
+            x=x_values_cashflow,
             y=-timeline_a['fees'],
             name='Fees',
             marker_color='#6b6b6b',
-            hovertemplate='<b>Fees</b><br>Age: %{x}<br>Amount: -$%{customdata:,.0f}<extra></extra>',
+            hovertemplate=f'<b>Fees</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
             customdata=timeline_a['fees']
         ))
         
         # Taxes (darker red)
         cashflow_fig.add_trace(go.Bar(
-            x=timeline_a['age'],
+            x=x_values_cashflow,
             y=-timeline_a['taxes'],
             name='Taxes',
             marker_color='#5c1a1a',
-            hovertemplate='<b>Taxes</b><br>Age: %{x}<br>Amount: -$%{customdata:,.0f}<extra></extra>',
+            hovertemplate=f'<b>Taxes</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
             customdata=timeline_a['taxes']
         ))
         
         cashflow_fig.update_layout(
             barmode='relative',
-            xaxis_title="Age",
+            xaxis_title=x_axis_title_text,
             yaxis_title=f"Annual Cashflow ({CURRENCY})",
             height=450,
             plot_bgcolor='white',
@@ -1687,7 +2288,7 @@ def main():
             hovermode='x unified'
         )
         
-        st.plotly_chart(cashflow_fig, config={'displayModeBar': True}, use_container_width=True)
+        st.plotly_chart(cashflow_fig, use_container_width=True, config={'displayModeBar': True})
         
         # Summary statistics
         st.markdown("### Cashflow Summary")
@@ -1708,39 +2309,74 @@ def main():
     # Timeline Table
     st.markdown("## Annual Timeline Analysis")
     
-    display_df = timeline_a[[
-        'age',
-        'start_balance_nominal',
-        'contributions',
-        'liquidity_net',
-        'withdrawals',
-        'fees',
-        'taxes',
-        'growth',
-        'end_balance_nominal',
-        'cpi_index',
-        'end_balance_real'
-    ]].copy()
-    
-    # Format for display
-    currency_cols = [
-        'start_balance_nominal',
-        'contributions',
-        'liquidity_net',
-        'withdrawals',
-        'fees',
-        'taxes',
-        'growth',
-        'end_balance_nominal',
-        'end_balance_real'
-    ]
-    
-    for col in currency_cols:
-        display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
-    
-    display_df['cpi_index'] = display_df['cpi_index'].apply(lambda x: f"{x:.4f}")
-    
-    st.dataframe(display_df, width="stretch", hide_index=True)
+    if compare_scenarios and timeline_b is not None and scenario_b is not None:
+        # COMPARISON TABLE: Show both scenarios side by side with deltas
+        st.markdown(f"**Comparing: {scenario_a.name} vs {scenario_b.name}**")
+        
+        # Create comparison dataframe
+        comp_timeline_df = pd.DataFrame({
+            'Age': timeline_a['age'],
+            
+            # Scenario A columns
+            f'{scenario_a.name} - End Balance (Nominal)': timeline_a['end_balance_nominal'].apply(lambda x: f"${x:,.0f}"),
+            f'{scenario_a.name} - End Balance (Real)': timeline_a['end_balance_real'].apply(lambda x: f"${x:,.0f}"),
+            f'{scenario_a.name} - Growth': timeline_a['growth'].apply(lambda x: f"${x:,.0f}"),
+            f'{scenario_a.name} - Contributions': timeline_a['contributions'].apply(lambda x: f"${x:,.0f}"),
+            f'{scenario_a.name} - Withdrawals': timeline_a['withdrawals'].apply(lambda x: f"${x:,.0f}"),
+            
+            # Scenario B columns
+            f'{scenario_b.name} - End Balance (Nominal)': timeline_b['end_balance_nominal'].apply(lambda x: f"${x:,.0f}"),
+            f'{scenario_b.name} - End Balance (Real)': timeline_b['end_balance_real'].apply(lambda x: f"${x:,.0f}"),
+            f'{scenario_b.name} - Growth': timeline_b['growth'].apply(lambda x: f"${x:,.0f}"),
+            f'{scenario_b.name} - Contributions': timeline_b['contributions'].apply(lambda x: f"${x:,.0f}"),
+            f'{scenario_b.name} - Withdrawals': timeline_b['withdrawals'].apply(lambda x: f"${x:,.0f}"),
+            
+            # Delta columns (raw values for calculation)
+            'Δ End Balance (Nominal)': (timeline_b['end_balance_nominal'] - timeline_a['end_balance_nominal']).apply(
+                lambda x: f"${x:+,.0f}" if x != 0 else "$0"
+            ),
+            'Δ End Balance (Real)': (timeline_b['end_balance_real'] - timeline_a['end_balance_real']).apply(
+                lambda x: f"${x:+,.0f}" if x != 0 else "$0"
+            ),
+        })
+        
+        st.dataframe(comp_timeline_df, width="stretch", hide_index=True)
+        
+    else:
+        # SINGLE SCENARIO TABLE: Original detailed view
+        display_df = timeline_a[[
+            'age',
+            'start_balance_nominal',
+            'contributions',
+            'liquidity_net',
+            'withdrawals',
+            'fees',
+            'taxes',
+            'growth',
+            'end_balance_nominal',
+            'cpi_index',
+            'end_balance_real'
+        ]].copy()
+        
+        # Format for display
+        currency_cols = [
+            'start_balance_nominal',
+            'contributions',
+            'liquidity_net',
+            'withdrawals',
+            'fees',
+            'taxes',
+            'growth',
+            'end_balance_nominal',
+            'end_balance_real'
+        ]
+        
+        for col in currency_cols:
+            display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
+        
+        display_df['cpi_index'] = display_df['cpi_index'].apply(lambda x: f"{x:.4f}")
+        
+        st.dataframe(display_df, width="stretch", hide_index=True)
     
     # Export buttons
     st.markdown("## Export & Download")
@@ -1752,7 +2388,7 @@ def main():
         st.download_button(
             label="Download Timeline (CSV)",
             data=csv_data,
-            file_name=f"harbor_stone_timeline_{scenario_a.name}.csv",
+            file_name=f"gordon_goss_timeline_{scenario_a.name}.csv",
             mime="text/csv"
         )
     
@@ -1762,7 +2398,7 @@ def main():
             st.download_button(
                 label="Download Chart (PNG)",
                 data=png_data,
-                file_name=f"harbor_stone_chart_{scenario_a.name}.png",
+                file_name=f"gordon_goss_chart_{scenario_a.name}.png",
                 mime="image/png"
             )
         else:
@@ -1774,7 +2410,7 @@ def main():
     st.markdown("---")
     st.markdown("## Debug Monitor")
     
-    with st.expander("**LIVE CALCULATION TRACKER** - Verify Math in Real-Time", expanded=True):
+    with st.expander("**LIVE CALCULATION TRACKER** - Verify Math in Real-Time", expanded=False):
         st.markdown("**This panel updates automatically as you change parameters above. Watch the calculations update!**")
         st.markdown("---")
         
@@ -1889,7 +2525,7 @@ def main():
                     st.write(f"  • Taxable: {evt.taxable} (Rate: {evt.tax_rate}%)")
                     
                     # Show when it applies
-                    if evt.recurrence == "One-time" or "One-time" in evt.type:
+                    if evt.recurrence == "One-time":
                         st.caption(f"Applies ONCE at age {evt.start_age}")
                     elif evt.recurrence == "Monthly":
                         annual_amount = evt.amount * 12
@@ -1901,7 +2537,7 @@ def main():
     st.markdown("---")
     st.markdown("## Administration")
     
-    if st.button("Show Detailed Calculation Breakdown", use_container_width=False):
+    with st.expander("Show Detailed Calculation Breakdown", expanded=False):
         st.markdown("### Calculation Verification & Audit Trail")
         
         # Scenario Parameters
@@ -2000,7 +2636,7 @@ def main():
                 # Event taxes for this year
                 for event in liquidity_events:
                     if event.start_age <= age <= event.end_age and event.taxable:
-                        if "One-time" in event.type or event.recurrence == "One-time":
+                        if event.recurrence == "One-time":
                             if age == event.start_age and event.amount > 0:
                                 total_event_taxes += event.amount * (event.tax_rate / 100.0)
                         else:

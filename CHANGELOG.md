@@ -5,6 +5,64 @@ All notable changes to the Harbor Stone Retirement Calculator will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2025-10-21
+
+### ✨ Added
+
+- **Age/Year Toggle**: Added X-axis toggle on main projection graph and cashflow analysis to switch between Age and Calendar Year display
+- **Auto-populate End Age**: One-time liquidity events now automatically populate end_age with start_age value in the data editor
+- **First Shortfall Age Detection**: Implemented detection of when portfolio balance first goes negative
+
+### 🎨 UI/UX Improvements
+
+- **Expander Defaults**: 
+  - Annual Cashflow Analysis now opens by default (was closed)
+  - Debug Monitor now closes by default (was open)
+  - Admin Panel now closes by default
+- **Liquidity Events**:
+  - Moved Recurrence column to position after Type field for better organization
+  - Removed emoji (📊) from "Show Detailed Calculation Breakdown" expander title
+  - Removed redundant info note from liquidity events page
+  - Caption explains one-time event behavior
+
+### 🐛 Bug Fixes
+
+- **First Shortfall Age**: Fixed calculation bug where shortfall age was never being set during timeline calculation
+- **Negative Balance Display**: Graph now properly displays negative portfolio balances
+- **Y-axis Range**: Added explicit rangemode configuration to allow negative values on portfolio graph
+
+### 📝 Documentation
+
+- **Admin Panel**: Added comprehensive version history and update notes
+- **Industry Standard Note**: Clarified that graphs display end-of-year balances (industry standard)
+- **Withdrawal Method Guidance**: Added note that percentage-based withdrawals never fully deplete portfolio
+
+---
+
+## [2.0.0] - 2025-10-21
+
+### 🐛 Fixed
+
+- **Inflation Toggle**: Fixed "Apply Inflation" toggle to actually control inflation calculations (was previously ignored)
+- **Cashflow Graph**: Fixed negative liquidity events (outflows) appearing on wrong side of graph - now split into separate inflows/outflows traces
+- **Settings Persistence**: Monte Carlo, tax rate, and other sidebar settings now persist when navigating to/from liquidity events screen
+
+### ✨ Improved
+
+- **Administration Panel**: Moved detailed calculation breakdown into collapsible expander (previously always visible)
+- **Liquidity Events UI**: 
+  - Added info message clarifying End Age only applies to recurring events
+  - Updated End Age field to be optional with helpful tooltip
+  - Added caption explaining outflow amounts auto-convert to negative on save
+  - Improved amount field help text for better clarity
+
+### 🎨 UI/UX Enhancements
+
+- **Cashflow Chart**: Split liquidity events into two separate traces (inflows in gold, outflows in bronze) for better visual clarity
+- **Better Tooltips**: Enhanced help text throughout liquidity events management interface
+
+---
+
 ## [1.0.0] - 2025-10-21
 
 ### 🎉 Initial Stable Release
