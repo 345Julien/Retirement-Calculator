@@ -444,22 +444,47 @@ def run_monte_carlo(
 def solve_safe_withdrawal_rate(
     scenario: Scenario,
     liquidity_events: List[LiquidityEvent],
+    target_ending_balance_pct: float = 0.0,
     tolerance: float = 0.01,
     max_iterations: int = 50
 ) -> Optional[float]:
     """
-    Binary search to find the maximum withdrawal % where balance never goes negative.
+    Binary search to find the maximum withdrawal % where balance meets target ending balance.
+    
+    Args:
+        scenario: Retirement scenario configuration
+        liquidity_events: List of one-time or recurring cash flows
+        target_ending_balance_pct: Target ending balance as % of retirement starting balance (0-100)
+        tolerance: Convergence tolerance for binary search
+        max_iterations: Maximum search iterations
     
     Returns safe withdrawal rate as percentage.
     """
     if scenario.withdrawal_method != "Fixed % of prior-year end balance":
         return None  # Only applicable for percentage-based withdrawals
     
-    low, high = 0.0, 50.0  # Search between 0% and 50% (increased from 20%)
+    # Calculate the target ending balance in dollars
+    # Need to simulate up to retirement to get the starting retirement balance
+    temp_scenario = Scenario(**scenario.to_dict())
+    temp_scenario.withdrawal_pct = 0.0  # No withdrawals to get retirement starting balance
+    temp_df, temp_metrics = build_timeline(temp_scenario, liquidity_events, show_real=True)
+    
+    # Find balance at retirement age
+    retirement_row = temp_df[temp_df['age'] == scenario.retirement_age]
+    if len(retirement_row) == 0:
+        return None
+    
+    retirement_start_balance = retirement_row.iloc[0]['start_balance_nominal']
+    target_balance = retirement_start_balance * (target_ending_balance_pct / 100.0)
+    
+    low, high = 0.0, 50.0  # Search between 0% and 50%
     best_rate = 0.0
     
     # Debug list to track iterations
     debug_info = []
+    debug_info.append(f"Retirement starting balance: ${retirement_start_balance:,.0f}")
+    debug_info.append(f"Target ending balance: ${target_balance:,.0f} ({target_ending_balance_pct}% of starting)")
+    debug_info.append("")
     
     for iteration in range(max_iterations):
         mid = (low + high) / 2.0
@@ -470,20 +495,25 @@ def solve_safe_withdrawal_rate(
         
         df, metrics = build_timeline(test_scenario, liquidity_events, show_real=True)
         
-        # Check if any year goes negative
+        # Check terminal balance and minimum balance
+        terminal_balance = df.iloc[-1]['end_balance_nominal']
         min_balance = df['end_balance_nominal'].min()
         
-        if min_balance >= 0:
+        # Success if: (1) never goes negative AND (2) terminal balance >= target
+        if min_balance >= 0 and terminal_balance >= target_balance:
             # Success, try higher
             best_rate = mid
             low = mid
-            result = "✓ solvent"
+            result = f"✓ solvent (terminal: ${terminal_balance:,.0f})"
         else:
             # Failed, try lower
             high = mid
-            result = "✗ negative"
+            if min_balance < 0:
+                result = f"✗ goes negative (min: ${min_balance:,.0f})"
+            else:
+                result = f"✗ below target (terminal: ${terminal_balance:,.0f})"
         
-        debug_info.append(f"Iter {iteration+1}: {mid:.4f}% → min_balance=${min_balance:,.0f} ({result})")
+        debug_info.append(f"Iter {iteration+1}: {mid:.4f}% → {result}")
         
         if high - low < tolerance:
             break
@@ -1621,15 +1651,37 @@ def main():
             
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # Safe Withdrawal Rate Button
-            col_swr1, col_swr2, col_swr3 = st.columns([1, 1, 1])
-            with col_swr2:
-                if st.button("Calculate Safe Withdrawal Rate", width="stretch"):
+            # Safe Withdrawal Rate Calculator
+            st.markdown("#### Safe Withdrawal Rate Calculator")
+            
+            # Input field for target ending balance percentage
+            col_input1, col_input2 = st.columns([1, 1])
+            
+            with col_input1:
+                target_ending_pct = st.number_input(
+                    "Target ending balance (% of retirement start)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=0.0,
+                    step=5.0,
+                    help="Percentage of your retirement starting balance to preserve at terminal age. 0% = deplete to $0, 25% = leave 25% remaining for legacy/safety margin"
+                )
+            
+            with col_input2:
+                if st.button("Calculate Safe Withdrawal Rate", use_container_width=True):
                     if scenario_a.withdrawal_method == "Fixed % of prior-year end balance":
                         with st.spinner("Calculating optimal withdrawal rate..."):
-                            swr = solve_safe_withdrawal_rate(scenario_a, liquidity_events_a)
-                            st.success(f"**Safe Withdrawal Rate: {swr:.2f}%**")
-                            st.caption("Maximum withdrawal rate where portfolio remains solvent")
+                            swr = solve_safe_withdrawal_rate(
+                                scenario_a, 
+                                liquidity_events_a,
+                                target_ending_balance_pct=target_ending_pct
+                            )
+                            if target_ending_pct > 0:
+                                st.success(f"**Safe Withdrawal Rate: {swr:.2f}%**")
+                                st.caption(f"Maximum withdrawal rate preserving {target_ending_pct}% ending balance")
+                            else:
+                                st.success(f"**Safe Withdrawal Rate: {swr:.2f}%**")
+                                st.caption("Maximum withdrawal rate where portfolio remains solvent")
                     else:
                         st.warning("SWR solver requires '% of prior-year balance' withdrawal method")
     
