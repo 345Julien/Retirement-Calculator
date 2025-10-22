@@ -239,9 +239,8 @@ def build_timeline(
         if age >= scenario.retirement_age:
             if scenario.withdrawal_method == "Fixed % of prior-year end balance":
                 withdrawal_pct = scenario.withdrawal_pct / 100.0
+                # Percentage is always annual, regardless of frequency
                 withdrawals = prior_year_end_balance * withdrawal_pct
-                if scenario.withdrawal_frequency == "Monthly":
-                    withdrawals *= 12
             else:
                 real_amount = scenario.withdrawal_real_amount
                 # Inflation only applies to future years, not initial capital
@@ -250,6 +249,7 @@ def build_timeline(
                     withdrawals = real_amount * cpi_index
                 else:
                     withdrawals = real_amount
+                # For fixed real amount, multiply by 12 if monthly
                 if scenario.withdrawal_frequency == "Monthly":
                     withdrawals *= 12
         # (No Streamlit/UI debug code here — function must be pure computation)
@@ -465,7 +465,7 @@ def solve_safe_withdrawal_rate(
         test_scenario = Scenario(**scenario.to_dict())
         test_scenario.withdrawal_pct = mid
         
-        df, metrics = build_timeline(test_scenario, liquidity_events)
+        df, metrics = build_timeline(test_scenario, liquidity_events, show_real=True)
         
         # Check if any year goes negative
         min_balance = df['end_balance_nominal'].min()
