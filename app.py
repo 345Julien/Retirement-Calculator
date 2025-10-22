@@ -455,7 +455,7 @@ def solve_safe_withdrawal_rate(
     if scenario.withdrawal_method != "Fixed % of prior-year end balance":
         return None  # Only applicable for percentage-based withdrawals
     
-    low, high = 0.0, 20.0  # Search between 0% and 20%
+    low, high = 0.0, 50.0  # Search between 0% and 50% (increased from 20%)
     best_rate = 0.0
     
     # Debug list to track iterations
@@ -2641,7 +2641,7 @@ def main():
                 
                 st.markdown("""
                 **Algorithm Explanation:**
-                - Searches between 0% and 20% withdrawal rate
+                - Searches between 0% and 50% withdrawal rate
                 - Tests each rate by simulating the full timeline
                 - If portfolio stays positive: tries a higher rate
                 - If portfolio goes negative: tries a lower rate
