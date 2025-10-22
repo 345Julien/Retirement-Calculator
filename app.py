@@ -458,7 +458,10 @@ def solve_safe_withdrawal_rate(
     low, high = 0.0, 20.0  # Search between 0% and 20%
     best_rate = 0.0
     
-    for _ in range(max_iterations):
+    # Debug list to track iterations
+    debug_info = []
+    
+    for iteration in range(max_iterations):
         mid = (low + high) / 2.0
         
         # Test this withdrawal rate
@@ -474,12 +477,21 @@ def solve_safe_withdrawal_rate(
             # Success, try higher
             best_rate = mid
             low = mid
+            result = "✓ solvent"
         else:
             # Failed, try lower
             high = mid
+            result = "✗ negative"
+        
+        debug_info.append(f"Iter {iteration+1}: {mid:.4f}% → min_balance=${min_balance:,.0f} ({result})")
         
         if high - low < tolerance:
             break
+    
+    # Store debug info in session state for display
+    if 'swr_debug' not in st.session_state:
+        st.session_state.swr_debug = []
+    st.session_state.swr_debug = debug_info
     
     return best_rate
 
@@ -2618,6 +2630,23 @@ def main():
                 ]
             }
             st.dataframe(pd.DataFrame(params_data), hide_index=True, width="stretch")
+        
+        # Safe Withdrawal Rate Calculation Details
+        if 'swr_debug' in st.session_state and st.session_state.swr_debug:
+            with st.expander("Safe Withdrawal Rate Calculation Details", expanded=False):
+                st.markdown("#### Binary Search Iterations")
+                st.caption("Shows how the algorithm narrows down the maximum sustainable withdrawal rate:")
+                for line in st.session_state.swr_debug:
+                    st.code(line, language=None)
+                
+                st.markdown("""
+                **Algorithm Explanation:**
+                - Searches between 0% and 20% withdrawal rate
+                - Tests each rate by simulating the full timeline
+                - If portfolio stays positive: tries a higher rate
+                - If portfolio goes negative: tries a lower rate
+                - Converges to within 0.01% tolerance
+                """)
         
         # Liquidity Events Detail
         with st.expander("Liquidity Events Configuration", expanded=True):
