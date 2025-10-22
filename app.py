@@ -582,9 +582,19 @@ def show_liquidity_events_page(planning_end_age: int = END_AGE):
                 if pd.notna(start_age):
                     events_df.at[idx, 'end_age'] = start_age
         
+        # Display debits as negative values in the table
+        display_df = events_df.copy()
+        for idx in range(len(display_df)):
+            if display_df.iloc[idx].get('type', '').lower() == 'debit':
+                # Make sure debits are shown as negative
+                display_df.at[idx, 'amount'] = -abs(display_df.iloc[idx]['amount'])
+            else:
+                # Make sure credits are shown as positive
+                display_df.at[idx, 'amount'] = abs(display_df.iloc[idx]['amount'])
+        
         # Use data editor - don't auto-save on every change
         edited_df = st.data_editor(
-            events_df,
+            display_df,
             num_rows="dynamic",
             width="stretch",
             key="liquidity_events_editor",
@@ -1009,107 +1019,143 @@ def main():
     
     # Basic inputs
     st.sidebar.markdown("#### Personal Information")
+    
+    # Use session state values if they exist, otherwise use defaults
+    current_age_default = st.session_state.get('current_age', CURRENT_AGE)
     current_age = st.sidebar.slider(
         "Current age",
         min_value=18,
         max_value=80,
-        value=CURRENT_AGE,
+        value=current_age_default,
+        key="current_age",
         help="Your current age"
     )
     
+    retirement_age_default = st.session_state.get('retirement_age', max(RETIREMENT_AGE, current_age))
     retirement_age = st.sidebar.slider(
         "Retirement age",
         min_value=current_age,
         max_value=80,
-        value=max(RETIREMENT_AGE, current_age),
+        value=max(retirement_age_default, current_age),
+        key="retirement_age",
         help="Age when you plan to retire"
     )
     
+    end_age_default = st.session_state.get('end_age', max(END_AGE, retirement_age))
     end_age = st.sidebar.slider(
         "End age (planning horizon)",
         min_value=retirement_age,
         max_value=110,
-        value=max(END_AGE, retirement_age),
+        value=max(end_age_default, retirement_age),
+        key="end_age",
         help="Plan until this age"
     )
     
     # Financial inputs
     st.sidebar.markdown("#### Current Portfolio")
+    
+    # Initialize defaults only on first load
+    if 'current_balance' not in st.session_state:
+        st.session_state.current_balance = float(CURRENT_BALANCE)
+    if 'contrib_amount' not in st.session_state:
+        st.session_state.contrib_amount = float(CONTRIB_AMOUNT)
+    
     current_balance = st.sidebar.number_input(
         "Current combined balance ($)",
         min_value=0.0,
-        value=float(CURRENT_BALANCE),
+        value=st.session_state.current_balance,
         step=10000.0,
+        key="current_balance_input",
         help="Your total portfolio value today"
     )
+    # Sync the value to session state
+    st.session_state.current_balance = current_balance
     
     st.sidebar.markdown("#### Ongoing Contributions")
     contrib_amount = st.sidebar.number_input(
         "Contribution amount ($)",
         min_value=0.0,
-        value=float(CONTRIB_AMOUNT),
+        value=st.session_state.contrib_amount,
         step=100.0,
+        key="contrib_amount_input",
         help="How much you contribute each period"
     )
+    # Sync the value to session state
+    st.session_state.contrib_amount = contrib_amount
+
     
     contrib_cadence = st.sidebar.radio(
         "Contribution cadence",
         options=["Monthly", "Annual"],
+        index=0 if st.session_state.get('contrib_cadence', 'Monthly') == 'Monthly' else 1,
+        key="contrib_cadence",
         help="Contributions stop automatically at retirement"
     )
     
     # Returns & inflation
     st.sidebar.markdown("#### Market Assumptions")
+    nominal_return_pct_default = st.session_state.get('nominal_return_pct', NOMINAL_RETURN_PCT)
     nominal_return_pct = st.sidebar.slider(
         "Expected nominal return (%)",
         min_value=0.0,
         max_value=20.0,
-        value=NOMINAL_RETURN_PCT,
+        value=nominal_return_pct_default,
         step=0.1,
+        key="nominal_return_pct",
         help="Expected annual return before inflation"
     )
     
+    inflation_pct_default = st.session_state.get('inflation_pct', INFLATION_PCT)
     inflation_pct = st.sidebar.slider(
         "Inflation (%)",
         min_value=0.0,
         max_value=10.0,
-        value=INFLATION_PCT,
+        value=inflation_pct_default,
         step=0.1,
+        key="inflation_pct",
         help="Expected annual inflation"
     )
     inflation_enabled = st.sidebar.toggle(
         "Apply Inflation",
-        value=True,
+        value=st.session_state.get('inflation_enabled', True),
+        key="inflation_enabled",
         help="Toggle to include inflation in all future years. If off, inflation is ignored in calculations."
     )
     
+    fee_pct_default = st.session_state.get('fee_pct', FEE_PCT)
     fee_pct = st.sidebar.slider(
         "Annual fee/expense drag (%)",
         min_value=0.0,
         max_value=5.0,
-        value=FEE_PCT,
+        value=fee_pct_default,
         step=0.05,
+        key="fee_pct",
         help="Annual fees and expenses"
     )
     
 
     # Withdrawal settings
     st.sidebar.markdown("#### Withdrawal Settings")
+    withdrawal_method_default = st.session_state.get('withdrawal_method', "Fixed % of prior-year end balance")
     withdrawal_method = st.sidebar.radio(
         "Withdrawal method",
         options=["Fixed % of prior-year end balance", "Fixed real dollars"],
+        index=0 if withdrawal_method_default == "Fixed % of prior-year end balance" else 1,
+        key="withdrawal_method",
         help="Choose withdrawal calculation method"
     )
     # Default frequency to ensure variable is always defined
     withdrawal_frequency = "Annual"
     
     if withdrawal_method == "Fixed % of prior-year end balance":
+        withdrawal_pct_default = st.session_state.get('withdrawal_pct', WITHDRAWAL_PCT)
         withdrawal_pct = st.sidebar.slider(
             "Withdrawal % of balance",
             min_value=0.0,
             max_value=20.0,
-            value=WITHDRAWAL_PCT,
+            value=withdrawal_pct_default,
             step=0.1,
+            key="withdrawal_pct",
             help="Percentage of prior year's ending balance to withdraw annually"
         )
         
@@ -1126,17 +1172,22 @@ def main():
         withdrawal_real_amount = WITHDRAWAL_REAL_AMOUNT  # Keep default for scenario saving
     else:
         withdrawal_pct = WITHDRAWAL_PCT  # Keep default for scenario saving
+        withdrawal_frequency_default = st.session_state.get('withdrawal_frequency', 'Annual')
         withdrawal_frequency = st.sidebar.radio(
             "Withdrawal frequency",
             options=["Annual", "Monthly"],
+            index=0 if withdrawal_frequency_default == "Annual" else 1,
+            key="withdrawal_frequency",
             help="How often withdrawals occur"
         )
         frequency_label = "monthly" if withdrawal_frequency == "Monthly" else "annual"
+        withdrawal_real_amount_default = st.session_state.get('withdrawal_real_amount', float(WITHDRAWAL_REAL_AMOUNT))
         withdrawal_real_amount = st.sidebar.number_input(
             f"Fixed real {frequency_label} withdrawal ($)",
             min_value=0.0,
-            value=float(WITHDRAWAL_REAL_AMOUNT),
+            value=withdrawal_real_amount_default,
             step=1000.0,
+            key="withdrawal_real_amount",
             help="Inflation-adjusted purchasing power"
         )
     
@@ -1168,10 +1219,12 @@ def main():
     
     # Options & toggles
     st.sidebar.markdown("#### Display Options")
+    show_real_default = st.session_state.get('show_real_radio', 'Real')
     show_real = st.sidebar.radio(
         "Show values",
         options=["Real", "Nominal"],
-        index=0
+        index=0 if show_real_default == "Real" else 1,
+        key="show_real_radio"
     ) == "Real"
     
     # Initialize session state for persistent settings across page navigation
@@ -1202,12 +1255,14 @@ def main():
         )
         st.session_state.mc_runs = mc_runs
     
+    return_stdev_pct_default = st.session_state.get('return_stdev_pct', RETURN_STDEV_PCT)
     return_stdev_pct = st.sidebar.slider(
         "Return volatility (stdev, %)",
         min_value=0.0,
         max_value=50.0,
-        value=RETURN_STDEV_PCT,
+        value=return_stdev_pct_default,
         step=0.5,
+        key="return_stdev_pct",
         help="Standard deviation for Monte Carlo simulation"
     )
     
@@ -1218,9 +1273,9 @@ def main():
         min_value=0.0,
         max_value=100.0,
         value=st.session_state.effective_tax_rate_pct,
-        key="tax_rate_input",
-        step=0.5,
-        help="Tax rate applied to retirement withdrawals (0% = Cayman Islands, tax-free)"
+        key="effective_tax_rate_input",
+        step=1.0,
+        help="Tax rate applied to withdrawals"
     )
     st.session_state.effective_tax_rate_pct = effective_tax_rate_pct
     
