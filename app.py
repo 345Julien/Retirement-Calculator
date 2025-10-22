@@ -1654,20 +1654,23 @@ def main():
             # Safe Withdrawal Rate Calculator
             st.markdown("#### Safe Withdrawal Rate Calculator")
             
-            # Input field for target ending balance percentage
-            col_input1, col_input2 = st.columns([1, 1])
+            # Input field for target ending balance percentage and button in same row
+            col_input, col_button = st.columns([1, 2])
             
-            with col_input1:
+            with col_input:
                 target_ending_pct = st.number_input(
-                    "Target ending balance (% of retirement start)",
+                    "Target ending balance (%)",
                     min_value=0.0,
                     max_value=100.0,
                     value=0.0,
                     step=5.0,
+                    format="%.1f",
                     help="Percentage of your retirement starting balance to preserve at terminal age. 0% = deplete to $0, 25% = leave 25% remaining for legacy/safety margin"
                 )
             
-            with col_input2:
+            with col_button:
+                # Add spacing to align button with input field
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
                 if st.button("Calculate Safe Withdrawal Rate", use_container_width=True):
                     if scenario_a.withdrawal_method == "Fixed % of prior-year end balance":
                         with st.spinner("Calculating optimal withdrawal rate..."):
