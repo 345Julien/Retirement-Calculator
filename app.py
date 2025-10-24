@@ -2,8 +2,8 @@
 Gordon Goss Retirement Calculator
 Professional retirement planning and analysis platform
 
-Version: 2.1.0
-Release Date: October 21, 2025
+Version: 2.2.0
+Release Date: October 24, 2025
 License: MIT
 
 QUICK START:
@@ -13,6 +13,7 @@ QUICK START:
 Features:
 - Portfolio projection with time-value analysis
 - Liquidity events management (one-time & recurring)
+- Black Swan scenario modeling
 - Monte Carlo simulation with fixed seed
 - Scenario comparison and analysis
 - Real/Nominal value toggle
@@ -22,7 +23,7 @@ Features:
 For documentation, see README.md and QUICK_START.md
 """
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 __author__ = "Gordon Goss"
 __license__ = "MIT"
 
@@ -105,12 +106,22 @@ class Scenario:
     enable_taxes: bool
     effective_tax_rate_pct: float
     inflation_enabled: bool = True
+    black_swan_enabled: bool = False
+    black_swan_age: int = 70
+    black_swan_loss_pct: float = 50.0
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Scenario':
+        # Handle legacy scenarios without Black Swan fields
+        if 'black_swan_enabled' not in data:
+            data['black_swan_enabled'] = False
+        if 'black_swan_age' not in data:
+            data['black_swan_age'] = 70
+        if 'black_swan_loss_pct' not in data:
+            data['black_swan_loss_pct'] = 50.0
         return cls(**data)
 
 
@@ -268,6 +279,15 @@ def build_timeline(
 
         growth = balance_after_cashflows * nominal_return
         end_balance_nominal = balance_after_cashflows + growth
+        
+        # Apply Black Swan event if enabled
+        black_swan_loss = 0.0
+        if (hasattr(scenario, 'black_swan_enabled') and scenario.black_swan_enabled and 
+            hasattr(scenario, 'black_swan_age') and age == scenario.black_swan_age):
+            black_swan_loss_pct = getattr(scenario, 'black_swan_loss_pct', 50.0) / 100.0
+            black_swan_loss = end_balance_nominal * black_swan_loss_pct
+            end_balance_nominal -= black_swan_loss
+        
         if inflation_enabled:
             if age == scenario.current_age:
                 cpi_index = 1.0
@@ -599,6 +619,8 @@ def show_liquidity_events_page(planning_end_age: int = END_AGE):
     st.markdown("## Liquidity Events Management")
     st.markdown("Configure one-time and recurring cash inflows and outflows for your retirement plan.")
     
+    st.markdown("### Liquidity Events")
+    
     # Initialize session state for saved and draft data
     if 'events_data' not in st.session_state:
         st.session_state.events_data = create_default_events()
@@ -700,7 +722,7 @@ def show_liquidity_events_page(planning_end_age: int = END_AGE):
             hide_index=True
         )
         
-        st.caption("**Tip**: For One-time events, End Age is automatically set to Start Age. For Monthly events, enter the monthly amount (e.g., $10,000/month will be calculated as $120,000/year). Debit amounts will be converted to negative values when you click Save.")
+        st.caption("**Tip**: For One-Time events, set End Age = Start Age. For Monthly events, enter the monthly amount (e.g., $10,000/month will be calculated as $120,000/year). Debit amounts will be converted to negative values when you click Save.")
         st.markdown("---")
         
         # Save button to apply changes
@@ -783,6 +805,55 @@ def show_liquidity_events_page(planning_end_age: int = END_AGE):
                 st.session_state.events_draft = st.session_state.events_data.copy()
                 st.rerun()
         
+        # Initialize session state for Black Swan scenario
+        if 'black_swan_enabled' not in st.session_state:
+            st.session_state.black_swan_enabled = False
+        if 'black_swan_age' not in st.session_state:
+            st.session_state.black_swan_age = 70
+        if 'black_swan_loss_pct' not in st.session_state:
+            st.session_state.black_swan_loss_pct = 50.0
+        
+        # Black Swan Scenario Section
+        st.markdown("---")
+        st.markdown("### Black Swan Scenario")
+        st.markdown("Simulate a catastrophic market event that reduces your portfolio by a specified percentage at a given age.")
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        
+        with col1:
+            black_swan_enabled = st.toggle(
+                "Enable Black Swan Event",
+                value=st.session_state.black_swan_enabled,
+                help="Toggle to simulate a major portfolio loss event"
+            )
+            st.session_state.black_swan_enabled = black_swan_enabled
+        
+        if black_swan_enabled:
+            with col2:
+                black_swan_age = st.number_input(
+                    "Black Swan Age",
+                    min_value=18,
+                    max_value=planning_end_age,
+                    value=int(st.session_state.black_swan_age),
+                    help="Age when the Black Swan event occurs",
+                    key="black_swan_age_input"
+                )
+                st.session_state.black_swan_age = black_swan_age
+            
+            with col3:
+                black_swan_loss_pct = st.number_input(
+                    "Portfolio Loss (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(st.session_state.black_swan_loss_pct),
+                    step=5.0,
+                    help="Percentage of portfolio to lose in the Black Swan event",
+                    key="black_swan_loss_pct_input",
+                    format="%.1f"
+                )
+                st.session_state.black_swan_loss_pct = black_swan_loss_pct
+            
+            st.warning(f"Black Swan Event: At age {black_swan_age}, portfolio will lose {black_swan_loss_pct:.1f}% of its value")
         
         # Back button
         st.markdown("---")
@@ -1084,64 +1155,34 @@ def main():
         st.session_state.end_age = END_AGE
     
     # Create sliders with number inputs
-    col1, col2 = st.sidebar.columns([3, 1])
-    with col1:
-        current_age_slider = st.slider(
-            "Current age",
-            min_value=18,
-            max_value=80,
-            value=int(st.session_state.current_age),
-            help="Your current age"
-        )
-    with col2:
-        current_age_input = st.number_input(
-            "##current_age_input",
-            min_value=18,
-            max_value=80,
-            value=int(st.session_state.current_age),
-            label_visibility="collapsed"
-        )
-    current_age = current_age_input if current_age_input != int(st.session_state.current_age) else current_age_slider
+    current_age = st.sidebar.number_input(
+        "Current age",
+        min_value=18,
+        max_value=80,
+        value=int(st.session_state.current_age),
+        help="Your current age",
+        key="current_age_input"
+    )
     st.session_state.current_age = current_age
     
-    col1, col2 = st.sidebar.columns([3, 1])
-    with col1:
-        retirement_age_slider = st.slider(
-            "Retirement age",
-            min_value=current_age,
-            max_value=max(current_age + 1, 100),
-            value=int(st.session_state.retirement_age) if st.session_state.retirement_age >= current_age else current_age,
-            help="Age when you plan to retire"
-        )
-    with col2:
-        retirement_age_input = st.number_input(
-            "##retirement_age_input",
-            min_value=current_age,
-            max_value=max(current_age + 1, 100),
-            value=int(st.session_state.retirement_age) if st.session_state.retirement_age >= current_age else current_age,
-            label_visibility="collapsed"
-        )
-    retirement_age = retirement_age_input if retirement_age_input != int(st.session_state.retirement_age) else retirement_age_slider
+    retirement_age = st.sidebar.number_input(
+        "Retirement age",
+        min_value=current_age,
+        max_value=max(current_age + 1, 100),
+        value=int(st.session_state.retirement_age) if st.session_state.retirement_age >= current_age else current_age,
+        help="Age when you plan to retire",
+        key="retirement_age_input"
+    )
     st.session_state.retirement_age = retirement_age
     
-    col1, col2 = st.sidebar.columns([3, 1])
-    with col1:
-        end_age_slider = st.slider(
-            "End age (planning horizon)",
-            min_value=retirement_age,
-            max_value=max(retirement_age + 1, 110),
-            value=int(st.session_state.end_age) if st.session_state.end_age >= retirement_age else retirement_age,
-            help="Plan until this age"
-        )
-    with col2:
-        end_age_input = st.number_input(
-            "##end_age_input",
-            min_value=retirement_age,
-            max_value=max(retirement_age + 1, 110),
-            value=int(st.session_state.end_age) if st.session_state.end_age >= retirement_age else retirement_age,
-            label_visibility="collapsed"
-        )
-    end_age = end_age_input if end_age_input != int(st.session_state.end_age) else end_age_slider
+    end_age = st.sidebar.number_input(
+        "End age (planning horizon)",
+        min_value=retirement_age,
+        max_value=max(retirement_age + 1, 110),
+        value=int(st.session_state.end_age) if st.session_state.end_age >= retirement_age else retirement_age,
+        help="Plan until this age",
+        key="end_age_input"
+    )
     st.session_state.end_age = end_age
     
     # Financial inputs
@@ -1158,9 +1199,14 @@ def main():
         min_value=0.0,
         value=float(st.session_state.current_balance),
         step=10000.0,
-        help="Your total portfolio value today"
+        help="Your total portfolio value today",
+        key="current_balance_input",
+        format="%.2f"
     )
     st.session_state.current_balance = current_balance
+    
+    # Display formatted currency
+    st.sidebar.caption(f"**${current_balance:,.2f}**")
     
     st.sidebar.markdown("#### Ongoing Contributions")
     contrib_amount = st.sidebar.number_input(
@@ -1168,9 +1214,14 @@ def main():
         min_value=0.0,
         value=float(st.session_state.contrib_amount),
         step=100.0,
-        help="How much you contribute each period"
+        help="How much you contribute each period",
+        key="contrib_amount_input",
+        format="%.2f"
     )
     st.session_state.contrib_amount = contrib_amount
+    
+    # Display formatted currency
+    st.sidebar.caption(f"**${contrib_amount:,.2f}**")
     
     # Initialize contrib_cadence in session state if not present
     if 'contrib_cadence' not in st.session_state:
@@ -1197,50 +1248,28 @@ def main():
     if 'fee_pct' not in st.session_state:
         st.session_state.fee_pct = FEE_PCT
     
-    col1, col2 = st.sidebar.columns([3, 1])
-    with col1:
-        nominal_return_slider = st.slider(
-            "Expected nominal return (%)",
-            min_value=0.0,
-            max_value=20.0,
-            value=float(st.session_state.nominal_return_pct),
-            step=0.1,
-            help="Expected annual return before inflation"
-        )
-    with col2:
-        nominal_return_input = st.number_input(
-            "##nominal_return_input",
-            min_value=0.0,
-            max_value=20.0,
-            value=float(st.session_state.nominal_return_pct),
-            step=0.1,
-            label_visibility="collapsed",
-            format="%.1f"
-        )
-    nominal_return_pct = nominal_return_input if nominal_return_input != float(st.session_state.nominal_return_pct) else nominal_return_slider
+    nominal_return_pct = st.sidebar.number_input(
+        "Expected nominal return (%)",
+        min_value=0.0,
+        max_value=20.0,
+        value=float(st.session_state.nominal_return_pct),
+        step=0.1,
+        help="Expected annual return before inflation",
+        key="nominal_return_input",
+        format="%.1f"
+    )
     st.session_state.nominal_return_pct = nominal_return_pct
     
-    col1, col2 = st.sidebar.columns([3, 1])
-    with col1:
-        inflation_slider = st.slider(
-            "Inflation (%)",
-            min_value=0.0,
-            max_value=10.0,
-            value=float(st.session_state.inflation_pct),
-            step=0.1,
-            help="Expected annual inflation"
-        )
-    with col2:
-        inflation_input = st.number_input(
-            "##inflation_input",
-            min_value=0.0,
-            max_value=10.0,
-            value=float(st.session_state.inflation_pct),
-            step=0.1,
-            label_visibility="collapsed",
-            format="%.1f"
-        )
-    inflation_pct = inflation_input if inflation_input != float(st.session_state.inflation_pct) else inflation_slider
+    inflation_pct = st.sidebar.number_input(
+        "Inflation (%)",
+        min_value=0.0,
+        max_value=10.0,
+        value=float(st.session_state.inflation_pct),
+        step=0.1,
+        help="Expected annual inflation",
+        key="inflation_input",
+        format="%.1f"
+    )
     st.session_state.inflation_pct = inflation_pct
     
     inflation_enabled = st.sidebar.toggle(
@@ -1250,27 +1279,16 @@ def main():
     )
     st.session_state.inflation_enabled = inflation_enabled
     
-    col1, col2 = st.sidebar.columns([3, 1])
-    with col1:
-        fee_slider = st.slider(
-            "Annual fee/expense drag (%)",
-            min_value=0.0,
-            max_value=5.0,
-            value=float(st.session_state.fee_pct),
-            step=0.05,
-            help="Annual fees and expenses"
-        )
-    with col2:
-        fee_input = st.number_input(
-            "##fee_input",
-            min_value=0.0,
-            max_value=5.0,
-            value=float(st.session_state.fee_pct),
-            step=0.05,
-            label_visibility="collapsed",
-            format="%.2f"
-        )
-    fee_pct = fee_input if fee_input != float(st.session_state.fee_pct) else fee_slider
+    fee_pct = st.sidebar.number_input(
+        "Annual fee/expense drag (%)",
+        min_value=0.0,
+        max_value=5.0,
+        value=float(st.session_state.fee_pct),
+        step=0.05,
+        help="Annual fees and expenses",
+        key="fee_input",
+        format="%.2f"
+    )
     st.session_state.fee_pct = fee_pct
     
 
@@ -1299,27 +1317,16 @@ def main():
     withdrawal_frequency = st.session_state.withdrawal_frequency
     
     if withdrawal_method == "Fixed % of prior-year end balance":
-        col1, col2 = st.sidebar.columns([3, 1])
-        with col1:
-            withdrawal_pct_slider = st.slider(
-                "Withdrawal % of balance",
-                min_value=0.0,
-                max_value=20.0,
-                value=float(st.session_state.withdrawal_pct),
-                step=0.1,
-                help="Percentage of prior year's ending balance to withdraw annually"
-            )
-        with col2:
-            withdrawal_pct_input = st.number_input(
-                "##withdrawal_pct_input",
-                min_value=0.0,
-                max_value=20.0,
-                value=float(st.session_state.withdrawal_pct),
-                step=0.1,
-                label_visibility="collapsed",
-                format="%.1f"
-            )
-        withdrawal_pct = withdrawal_pct_input if withdrawal_pct_input != float(st.session_state.withdrawal_pct) else withdrawal_pct_slider
+        withdrawal_pct = st.sidebar.number_input(
+            "Withdrawal % of balance",
+            min_value=0.0,
+            max_value=20.0,
+            value=float(st.session_state.withdrawal_pct),
+            step=0.1,
+            help="Percentage of prior year's ending balance to withdraw annually",
+            key="withdrawal_pct_input",
+            format="%.1f"
+        )
         st.session_state.withdrawal_pct = withdrawal_pct
         
         # Calculate and display the nominal annual withdrawal amount in USD
@@ -1351,9 +1358,14 @@ def main():
             min_value=0.0,
             value=float(st.session_state.withdrawal_real_amount),
             step=1000.0,
-            help="Inflation-adjusted purchasing power"
+            help="Inflation-adjusted purchasing power",
+            key="withdrawal_real_amount_input",
+            format="%.2f"
         )
         st.session_state.withdrawal_real_amount = withdrawal_real_amount
+        
+        # Display formatted currency
+        st.sidebar.caption(f"**${withdrawal_real_amount:,.2f}**")
     
     # Set default frequency if not already set
     if 'withdrawal_frequency' not in locals():
@@ -1408,52 +1420,30 @@ def main():
     
     mc_runs = st.session_state.mc_runs
     if enable_mc:
-        col1, col2 = st.sidebar.columns([3, 1])
-        with col1:
-            mc_runs_slider = st.slider(
-                "Monte Carlo runs",
-                min_value=100,
-                max_value=5000,
-                value=int(st.session_state.mc_runs),
-                step=100
-            )
-        with col2:
-            mc_runs_input = st.number_input(
-                "##mc_runs_input",
-                min_value=100,
-                max_value=5000,
-                value=int(st.session_state.mc_runs),
-                step=100,
-                label_visibility="collapsed"
-            )
-        mc_runs = mc_runs_input if mc_runs_input != int(st.session_state.mc_runs) else mc_runs_slider
+        mc_runs = st.sidebar.number_input(
+            "Monte Carlo runs",
+            min_value=100,
+            max_value=5000,
+            value=int(st.session_state.mc_runs),
+            step=100,
+            key="mc_runs_input"
+        )
         st.session_state.mc_runs = mc_runs
     
     # Initialize return_stdev_pct in session state if not present
     if 'return_stdev_pct' not in st.session_state:
         st.session_state.return_stdev_pct = RETURN_STDEV_PCT
     
-    col1, col2 = st.sidebar.columns([3, 1])
-    with col1:
-        return_stdev_slider = st.slider(
-            "Return volatility (stdev, %)",
-            min_value=0.0,
-            max_value=50.0,
-            value=float(st.session_state.return_stdev_pct),
-            step=0.5,
-            help="Standard deviation for Monte Carlo simulation"
-        )
-    with col2:
-        return_stdev_input = st.number_input(
-            "##return_stdev_input",
-            min_value=0.0,
-            max_value=50.0,
-            value=float(st.session_state.return_stdev_pct),
-            step=0.5,
-            label_visibility="collapsed",
-            format="%.1f"
-        )
-    return_stdev_pct = return_stdev_input if return_stdev_input != float(st.session_state.return_stdev_pct) else return_stdev_slider
+    return_stdev_pct = st.sidebar.number_input(
+        "Return volatility (stdev, %)",
+        min_value=0.0,
+        max_value=50.0,
+        value=float(st.session_state.return_stdev_pct),
+        step=0.5,
+        help="Standard deviation for Monte Carlo simulation",
+        key="return_stdev_input",
+        format="%.1f"
+    )
     st.session_state.return_stdev_pct = return_stdev_pct
     
     # Withdrawal tax rate
@@ -1469,7 +1459,8 @@ def main():
         max_value=100.0,
         value=float(st.session_state.effective_tax_rate_pct),
         step=1.0,
-        help="Tax rate applied to withdrawals"
+        help="Tax rate applied to withdrawals",
+        key="effective_tax_rate_pct_input"
     )
     st.session_state.effective_tax_rate_pct = effective_tax_rate_pct
     
@@ -1542,7 +1533,10 @@ def main():
                 mc_runs=mc_runs,
                 enable_taxes=enable_taxes,
                 effective_tax_rate_pct=effective_tax_rate_pct,
-                inflation_enabled=inflation_enabled
+                inflation_enabled=inflation_enabled,
+                black_swan_enabled=st.session_state.get('black_swan_enabled', False),
+                black_swan_age=st.session_state.get('black_swan_age', 70),
+                black_swan_loss_pct=st.session_state.get('black_swan_loss_pct', 50.0)
             )
             saved_scenarios[scenario_a_name] = scenario_a
             save_scenarios(saved_scenarios)
@@ -1702,7 +1696,10 @@ def main():
             mc_runs=mc_runs,
             enable_taxes=enable_taxes,
             effective_tax_rate_pct=effective_tax_rate_pct,
-            inflation_enabled=inflation_enabled
+            inflation_enabled=inflation_enabled,
+            black_swan_enabled=st.session_state.get('black_swan_enabled', False),
+            black_swan_age=st.session_state.get('black_swan_age', 70),
+            black_swan_loss_pct=st.session_state.get('black_swan_loss_pct', 50.0)
         )
     
     # Get liquidity events for scenario A
@@ -2298,34 +2295,43 @@ def main():
     # When comparing scenarios, create TWO separate legend boxes for clarity
     if compare_scenarios and scenario_b and (recurring_events or recurring_events_b):
         # SCENARIO A LEGEND (Left side)
-        if recurring_events:
-            legend_lines_a = [f"<b>{scenario_a.name}</b>", "<b>Recurring Events:</b>"]
+        if recurring_events or (hasattr(scenario_a, 'black_swan_enabled') and scenario_a.black_swan_enabled):
+            legend_lines_a = [f"<b>{scenario_a.name}</b>", "<b>Liquidity Events:</b>"]
             
-            # Separate credits and debits
-            credits = [e for e in recurring_events if e.amount > 0]
-            debits = [e for e in recurring_events if e.amount < 0]
+            if recurring_events:
+                legend_lines_a.append("<b>Recurring:</b>")
+                
+                # Separate credits and debits
+                credits = [e for e in recurring_events if e.amount > 0]
+                debits = [e for e in recurring_events if e.amount < 0]
+                
+                if credits:
+                    for event in credits:
+                        amount = event.amount
+                        freq = "yr"  # Always show per year since we display annual totals
+                        if event.recurrence == "Monthly":
+                            amount *= 12
+                        amount_str = f"${abs(amount):,.0f}"
+                        legend_lines_a.append(f"  + {event.label}: {amount_str}/{freq}")
+                        legend_lines_a.append(f"    (Age {event.start_age}-{event.end_age})")
+                
+                if debits:
+                    for event in debits:
+                        amount = event.amount
+                        freq = "yr"  # Always show per year since we display annual totals
+                        if event.recurrence == "Monthly":
+                            amount *= 12
+                        amount_str = f"${abs(amount):,.0f}"
+                        legend_lines_a.append(f"  - {event.label}: {amount_str}/{freq}")
+                        legend_lines_a.append(f"    (Age {event.start_age}-{event.end_age})")
             
-            if credits:
-                legend_lines_a.append("<b>Credits:</b>")
-                for event in credits:
-                    amount = event.amount
-                    freq = "yr"  # Always show per year since we display annual totals
-                    if event.recurrence == "Monthly":
-                        amount *= 12
-                    amount_str = f"${abs(amount):,.0f}"
-                    legend_lines_a.append(f"  + {event.label}: {amount_str}/{freq}")
-                    legend_lines_a.append(f"    (Age {event.start_age}-{event.end_age})")
-            
-            if debits:
-                legend_lines_a.append("<b>Debits:</b>")
-                for event in debits:
-                    amount = event.amount
-                    freq = "yr"  # Always show per year since we display annual totals
-                    if event.recurrence == "Monthly":
-                        amount *= 12
-                    amount_str = f"${abs(amount):,.0f}"
-                    legend_lines_a.append(f"  - {event.label}: {amount_str}/{freq}")
-                    legend_lines_a.append(f"    (Age {event.start_age}-{event.end_age})")
+            # Add Black Swan to legend if enabled for Scenario A
+            if hasattr(scenario_a, 'black_swan_enabled') and scenario_a.black_swan_enabled:
+                legend_lines_a.append("<b>Black Swan:</b>")
+                black_swan_age = getattr(scenario_a, 'black_swan_age', 70)
+                black_swan_loss = getattr(scenario_a, 'black_swan_loss_pct', 50.0)
+                legend_lines_a.append(f"  🦢 Portfolio Loss: {black_swan_loss:.1f}%")
+                legend_lines_a.append(f"    (Age {black_swan_age})")
             
             fig.add_annotation(
                 xref="paper", yref="paper",
@@ -2342,34 +2348,43 @@ def main():
             )
         
         # SCENARIO B LEGEND (Right side)
-        if recurring_events_b:
-            legend_lines_b = [f"<b>{scenario_b.name}</b>", "<b>Recurring Events:</b>"]
+        if recurring_events_b or (hasattr(scenario_b, 'black_swan_enabled') and scenario_b.black_swan_enabled):
+            legend_lines_b = [f"<b>{scenario_b.name}</b>", "<b>Liquidity Events:</b>"]
             
-            # Separate credits and debits for scenario B
-            credits_b = [e for e in recurring_events_b if e.amount > 0]
-            debits_b = [e for e in recurring_events_b if e.amount < 0]
+            if recurring_events_b:
+                legend_lines_b.append("<b>Recurring:</b>")
+                
+                # Separate credits and debits for scenario B
+                credits_b = [e for e in recurring_events_b if e.amount > 0]
+                debits_b = [e for e in recurring_events_b if e.amount < 0]
+                
+                if credits_b:
+                    for event in credits_b:
+                        amount = event.amount
+                        freq = "yr"  # Always show per year since we display annual totals
+                        if event.recurrence == "Monthly":
+                            amount *= 12
+                        amount_str = f"${abs(amount):,.0f}"
+                        legend_lines_b.append(f"  + {event.label}: {amount_str}/{freq}")
+                        legend_lines_b.append(f"    (Age {event.start_age}-{event.end_age})")
+                
+                if debits_b:
+                    for event in debits_b:
+                        amount = event.amount
+                        freq = "yr"  # Always show per year since we display annual totals
+                        if event.recurrence == "Monthly":
+                            amount *= 12
+                        amount_str = f"${abs(amount):,.0f}"
+                        legend_lines_b.append(f"  - {event.label}: {amount_str}/{freq}")
+                        legend_lines_b.append(f"    (Age {event.start_age}-{event.end_age})")
             
-            if credits_b:
-                legend_lines_b.append("<b>Credits:</b>")
-                for event in credits_b:
-                    amount = event.amount
-                    freq = "yr"  # Always show per year since we display annual totals
-                    if event.recurrence == "Monthly":
-                        amount *= 12
-                    amount_str = f"${abs(amount):,.0f}"
-                    legend_lines_b.append(f"  + {event.label}: {amount_str}/{freq}")
-                    legend_lines_b.append(f"    (Age {event.start_age}-{event.end_age})")
-            
-            if debits_b:
-                legend_lines_b.append("<b>Debits:</b>")
-                for event in debits_b:
-                    amount = event.amount
-                    freq = "yr"  # Always show per year since we display annual totals
-                    if event.recurrence == "Monthly":
-                        amount *= 12
-                    amount_str = f"${abs(amount):,.0f}"
-                    legend_lines_b.append(f"  - {event.label}: {amount_str}/{freq}")
-                    legend_lines_b.append(f"    (Age {event.start_age}-{event.end_age})")
+            # Add Black Swan to legend if enabled for Scenario B
+            if hasattr(scenario_b, 'black_swan_enabled') and scenario_b.black_swan_enabled:
+                legend_lines_b.append("<b>Black Swan:</b>")
+                black_swan_age_b = getattr(scenario_b, 'black_swan_age', 70)
+                black_swan_loss_b = getattr(scenario_b, 'black_swan_loss_pct', 50.0)
+                legend_lines_b.append(f"  🦢 Portfolio Loss: {black_swan_loss_b:.1f}%")
+                legend_lines_b.append(f"    (Age {black_swan_age_b})")
             
             fig.add_annotation(
                 xref="paper", yref="paper",
@@ -2386,32 +2401,41 @@ def main():
             )
     
     # Single scenario legend (original behavior)
-    elif recurring_events and not compare_scenarios:
-        legend_lines = ["<b>Recurring Events:</b>"]
+    elif (recurring_events or (hasattr(scenario_a, 'black_swan_enabled') and scenario_a.black_swan_enabled)) and not compare_scenarios:
+        legend_lines = ["<b>Liquidity Events:</b>"]
         
-        # Separate credits and debits
-        credits = [e for e in recurring_events if e.amount > 0]
-        debits = [e for e in recurring_events if e.amount < 0]
+        if recurring_events:
+            legend_lines.append("<b>Recurring:</b>")
+            
+            # Separate credits and debits
+            credits = [e for e in recurring_events if e.amount > 0]
+            debits = [e for e in recurring_events if e.amount < 0]
+            
+            if credits:
+                for event in credits:
+                    amount = event.amount
+                    freq = "yr"  # Always show per year since we display annual totals
+                    if event.recurrence == "Monthly":
+                        amount *= 12
+                    amount_str = f"${abs(amount):,.0f}"
+                    legend_lines.append(f"  + {event.label}: {amount_str}/{freq} (Age {event.start_age}-{event.end_age})")
+            
+            if debits:
+                for event in debits:
+                    amount = event.amount
+                    freq = "yr"  # Always show per year since we display annual totals
+                    if event.recurrence == "Monthly":
+                        amount *= 12
+                    amount_str = f"${abs(amount):,.0f}"
+                    legend_lines.append(f"  - {event.label}: {amount_str}/{freq} (Age {event.start_age}-{event.end_age})")
         
-        if credits:
-            legend_lines.append("<b>Credits:</b>")
-            for event in credits:
-                amount = event.amount
-                freq = "yr"  # Always show per year since we display annual totals
-                if event.recurrence == "Monthly":
-                    amount *= 12
-                amount_str = f"${abs(amount):,.0f}"
-                legend_lines.append(f"  + {event.label}: {amount_str}/{freq} (Age {event.start_age}-{event.end_age})")
-        
-        if debits:
-            legend_lines.append("<b>Debits:</b>")
-            for event in debits:
-                amount = event.amount
-                freq = "yr"  # Always show per year since we display annual totals
-                if event.recurrence == "Monthly":
-                    amount *= 12
-                amount_str = f"${abs(amount):,.0f}"
-                legend_lines.append(f"  - {event.label}: {amount_str}/{freq} (Age {event.start_age}-{event.end_age})")
+        # Add Black Swan to legend if enabled
+        if hasattr(scenario_a, 'black_swan_enabled') and scenario_a.black_swan_enabled:
+            legend_lines.append("<b>Black Swan:</b>")
+            black_swan_age = getattr(scenario_a, 'black_swan_age', 70)
+            black_swan_loss = getattr(scenario_a, 'black_swan_loss_pct', 50.0)
+            legend_lines.append(f"  🦢 Portfolio Loss: {black_swan_loss:.1f}%")
+            legend_lines.append(f"    (Age {black_swan_age})")
         
         fig.add_annotation(
             xref="paper", yref="paper",
@@ -2427,7 +2451,93 @@ def main():
             align='left'
         )
     
+    # Determine x-axis title for labels
     x_axis_title_text = "Year" if x_axis_mode == "Year" else "Age"
+    
+    # Add Black Swan marker for Scenario A if enabled
+    if hasattr(scenario_a, 'black_swan_enabled') and scenario_a.black_swan_enabled:
+        black_swan_age = getattr(scenario_a, 'black_swan_age', 70)
+        
+        # Get the balance at black swan age from timeline_a
+        try:
+            black_swan_row = timeline_a[timeline_a['age'] == black_swan_age]
+            if not black_swan_row.empty:
+                black_swan_balance = black_swan_row[balance_col].values[0]
+                
+                # Convert age to year if needed
+                if x_axis_mode == "Year":
+                    marker_x = black_swan_age + age_to_year_offset
+                else:
+                    marker_x = black_swan_age
+                
+                # Add a scatter marker for the black swan event
+                marker_name = f'Black Swan Event ({scenario_a.name})' if compare_scenarios else 'Black Swan Event'
+                fig.add_trace(go.Scatter(
+                    x=[marker_x],
+                    y=[black_swan_balance],
+                    mode='markers+text',
+                    marker=dict(
+                        symbol='circle',
+                        size=15,
+                        color='#003d29',  # Dark green to match scenario A
+                        line=dict(color='white', width=2)
+                    ),
+                    text=['🦢'],
+                    textfont=dict(size=14),
+                    textposition='top center',
+                    name=marker_name,
+                    showlegend=False,
+                    hovertemplate=(
+                        f"<b>Black Swan Event - {scenario_a.name}</b><br>" +
+                        f"{x_axis_title_text}: {marker_x}<br>" +
+                        f"Portfolio Loss: {getattr(scenario_a, 'black_swan_loss_pct', 50.0):.1f}%<br>" +
+                        "<extra></extra>"
+                    )
+                ))
+        except Exception:
+            pass  # Silently skip if black swan age not in timeline
+    
+    # Add Black Swan marker for Scenario B if comparing and enabled
+    if compare_scenarios and scenario_b and hasattr(scenario_b, 'black_swan_enabled') and scenario_b.black_swan_enabled:
+        black_swan_age_b = getattr(scenario_b, 'black_swan_age', 70)
+        
+        # Get the balance at black swan age from timeline_b
+        try:
+            black_swan_row_b = timeline_b[timeline_b['age'] == black_swan_age_b]
+            if not black_swan_row_b.empty:
+                black_swan_balance_b = black_swan_row_b[balance_col].values[0]
+                
+                # Convert age to year if needed
+                if x_axis_mode == "Year":
+                    marker_x_b = black_swan_age_b + age_to_year_offset
+                else:
+                    marker_x_b = black_swan_age_b
+                
+                # Add a scatter marker for the black swan event (different color for scenario B)
+                fig.add_trace(go.Scatter(
+                    x=[marker_x_b],
+                    y=[black_swan_balance_b],
+                    mode='markers+text',
+                    marker=dict(
+                        symbol='circle',
+                        size=15,
+                        color='#2c2c2c',  # Dark gray to match scenario B
+                        line=dict(color='white', width=2)
+                    ),
+                    text=['🦢'],
+                    textfont=dict(size=14),
+                    textposition='bottom center',  # Different position to avoid overlap
+                    name=f'Black Swan Event ({scenario_b.name})',
+                    showlegend=False,
+                    hovertemplate=(
+                        f"<b>Black Swan Event - {scenario_b.name}</b><br>" +
+                        f"{x_axis_title_text}: {marker_x_b}<br>" +
+                        f"Portfolio Loss: {getattr(scenario_b, 'black_swan_loss_pct', 50.0):.1f}%<br>" +
+                        "<extra></extra>"
+                    )
+                ))
+        except Exception:
+            pass  # Silently skip if black swan age not in timeline
     
     fig.update_layout(
         xaxis_title=x_axis_title_text,
@@ -2457,7 +2567,10 @@ def main():
     # Cashflow Chart - Improved Design
     st.markdown("## Annual Cashflow Analysis")
     with st.expander("View Detailed Cashflow Breakdown", expanded=True):
-        st.markdown("**This chart shows all cash inflows and outflows by year.**")
+        if compare_scenarios and timeline_b is not None and scenario_b is not None:
+            st.markdown(f"**Comparing cashflow: {scenario_a.name} vs {scenario_b.name}**")
+        else:
+            st.markdown("**This chart shows all cash inflows and outflows by year.**")
         
         cashflow_fig = go.Figure()
         
@@ -2465,22 +2578,25 @@ def main():
         x_values_cashflow = x_values_a  # Reuse the calculated values from main chart
         x_label_cashflow = "Year" if x_axis_mode == "Year" else "Age"
         
+        # Scenario A suffix for comparison mode
+        scenario_a_suffix = f" ({scenario_a.name})" if compare_scenarios and scenario_b else ""
+        
         # Contributions (green for inflows)
         cashflow_fig.add_trace(go.Bar(
             x=x_values_cashflow,
             y=timeline_a['contributions'],
-            name='Contributions',
+            name=f'Contributions{scenario_a_suffix}',
             marker_color='#00875a',  # Brighter green for better contrast
-            hovertemplate=f'<b>Contributions</b><br>{x_label_cashflow}: %{{x}}<br>Amount: $%{{y:,.0f}}<extra></extra>'
+            hovertemplate=f'<b>Contributions{scenario_a_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: $%{{y:,.0f}}<extra></extra>'
         ))
         
         # Withdrawals (red/burgundy for outflows)
         cashflow_fig.add_trace(go.Bar(
             x=x_values_cashflow,
             y=-timeline_a['withdrawals'],
-            name='Withdrawals',
+            name=f'Withdrawals{scenario_a_suffix}',
             marker_color='#8b2635',  # Burgundy/wine red for contrast
-            hovertemplate=f'<b>Withdrawals</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
+            hovertemplate=f'<b>Withdrawals{scenario_a_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
             customdata=timeline_a['withdrawals']
         ))
         
@@ -2492,18 +2608,18 @@ def main():
         cashflow_fig.add_trace(go.Bar(
             x=x_values_cashflow,
             y=liquidity_inflows,
-            name='Liquidity Inflows',
+            name=f'Liquidity Inflows{scenario_a_suffix}',
             marker_color='#c9a961',  # Gordon Goss gold
-            hovertemplate=f'<b>Liquidity Inflows</b><br>{x_label_cashflow}: %{{x}}<br>Amount: $%{{y:,.0f}}<extra></extra>'
+            hovertemplate=f'<b>Liquidity Inflows{scenario_a_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: $%{{y:,.0f}}<extra></extra>'
         ))
         
         # Liquidity Outflows (darker gold/bronze)
         cashflow_fig.add_trace(go.Bar(
             x=x_values_cashflow,
             y=liquidity_outflows,
-            name='Liquidity Outflows',
+            name=f'Liquidity Outflows{scenario_a_suffix}',
             marker_color='#8b7355',  # Bronze/brown
-            hovertemplate=f'<b>Liquidity Outflows</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
+            hovertemplate=f'<b>Liquidity Outflows{scenario_a_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
             customdata=abs(liquidity_outflows)
         ))
         
@@ -2511,9 +2627,9 @@ def main():
         cashflow_fig.add_trace(go.Bar(
             x=x_values_cashflow,
             y=-timeline_a['fees'],
-            name='Fees',
+            name=f'Fees{scenario_a_suffix}',
             marker_color='#6b6b6b',
-            hovertemplate=f'<b>Fees</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
+            hovertemplate=f'<b>Fees{scenario_a_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
             customdata=timeline_a['fees']
         ))
         
@@ -2521,11 +2637,88 @@ def main():
         cashflow_fig.add_trace(go.Bar(
             x=x_values_cashflow,
             y=-timeline_a['taxes'],
-            name='Taxes',
+            name=f'Taxes{scenario_a_suffix}',
             marker_color='#5c1a1a',
-            hovertemplate=f'<b>Taxes</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
+            hovertemplate=f'<b>Taxes{scenario_a_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
             customdata=timeline_a['taxes']
         ))
+        
+        # Add Scenario B cashflow if comparing
+        if compare_scenarios and timeline_b is not None and scenario_b is not None:
+            # Prepare x-axis for scenario B
+            if x_axis_mode == "Year":
+                x_values_cashflow_b = [age + age_to_year_offset for age in timeline_b['age']]
+            else:
+                x_values_cashflow_b = timeline_b['age']
+            
+            scenario_b_suffix = f" ({scenario_b.name})"
+            
+            # Use slightly different colors/patterns for Scenario B to distinguish
+            # Contributions for B (lighter green with pattern)
+            cashflow_fig.add_trace(go.Bar(
+                x=x_values_cashflow_b,
+                y=timeline_b['contributions'],
+                name=f'Contributions{scenario_b_suffix}',
+                marker_color='#4db380',  # Lighter green
+                marker_pattern_shape="/",  # Add pattern for distinction
+                hovertemplate=f'<b>Contributions{scenario_b_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: $%{{y:,.0f}}<extra></extra>'
+            ))
+            
+            # Withdrawals for B (lighter burgundy with pattern)
+            cashflow_fig.add_trace(go.Bar(
+                x=x_values_cashflow_b,
+                y=-timeline_b['withdrawals'],
+                name=f'Withdrawals{scenario_b_suffix}',
+                marker_color='#b8475a',  # Lighter burgundy
+                marker_pattern_shape="/",
+                hovertemplate=f'<b>Withdrawals{scenario_b_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
+                customdata=timeline_b['withdrawals']
+            ))
+            
+            # Liquidity Events for B
+            liquidity_inflows_b = timeline_b['liquidity_net'].clip(lower=0)
+            liquidity_outflows_b = timeline_b['liquidity_net'].clip(upper=0)
+            
+            cashflow_fig.add_trace(go.Bar(
+                x=x_values_cashflow_b,
+                y=liquidity_inflows_b,
+                name=f'Liquidity Inflows{scenario_b_suffix}',
+                marker_color='#ddc98a',  # Lighter gold
+                marker_pattern_shape="/",
+                hovertemplate=f'<b>Liquidity Inflows{scenario_b_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: $%{{y:,.0f}}<extra></extra>'
+            ))
+            
+            cashflow_fig.add_trace(go.Bar(
+                x=x_values_cashflow_b,
+                y=liquidity_outflows_b,
+                name=f'Liquidity Outflows{scenario_b_suffix}',
+                marker_color='#a89175',  # Lighter bronze
+                marker_pattern_shape="/",
+                hovertemplate=f'<b>Liquidity Outflows{scenario_b_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
+                customdata=abs(liquidity_outflows_b)
+            ))
+            
+            # Fees for B
+            cashflow_fig.add_trace(go.Bar(
+                x=x_values_cashflow_b,
+                y=-timeline_b['fees'],
+                name=f'Fees{scenario_b_suffix}',
+                marker_color='#8c8c8c',  # Lighter gray
+                marker_pattern_shape="/",
+                hovertemplate=f'<b>Fees{scenario_b_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
+                customdata=timeline_b['fees']
+            ))
+            
+            # Taxes for B
+            cashflow_fig.add_trace(go.Bar(
+                x=x_values_cashflow_b,
+                y=-timeline_b['taxes'],
+                name=f'Taxes{scenario_b_suffix}',
+                marker_color='#8b3a3a',  # Lighter dark red
+                marker_pattern_shape="/",
+                hovertemplate=f'<b>Taxes{scenario_b_suffix}</b><br>{x_label_cashflow}: %{{x}}<br>Amount: -$%{{customdata:,.0f}}<extra></extra>',
+                customdata=timeline_b['taxes']
+            ))
         
         cashflow_fig.update_layout(
             barmode='relative',
@@ -2564,21 +2757,55 @@ def main():
         
         st.plotly_chart(cashflow_fig, use_container_width=True, config={'displayModeBar': True})
         
-        # Summary statistics
+        # Summary statistics - show both scenarios if comparing
         st.markdown("### Cashflow Summary")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            total_contrib = timeline_a['contributions'].sum()
-            st.metric("Total Contributions", f"${total_contrib:,.0f}")
-        with col2:
-            total_withdraw = timeline_a['withdrawals'].sum()
-            st.metric("Total Withdrawals", f"${total_withdraw:,.0f}")
-        with col3:
-            total_fees = timeline_a['fees'].sum()
-            st.metric("Total Fees", f"${total_fees:,.0f}")
-        with col4:
-            total_taxes = timeline_a['taxes'].sum()
-            st.metric("Total Taxes", f"${total_taxes:,.0f}")
+        
+        if compare_scenarios and timeline_b is not None and scenario_b is not None:
+            # Show comparison with two rows
+            st.markdown(f"**{scenario_a.name}**")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                total_contrib = timeline_a['contributions'].sum()
+                st.metric("Total Contributions", f"${total_contrib:,.0f}")
+            with col2:
+                total_withdraw = timeline_a['withdrawals'].sum()
+                st.metric("Total Withdrawals", f"${total_withdraw:,.0f}")
+            with col3:
+                total_fees = timeline_a['fees'].sum()
+                st.metric("Total Fees", f"${total_fees:,.0f}")
+            with col4:
+                total_taxes = timeline_a['taxes'].sum()
+                st.metric("Total Taxes", f"${total_taxes:,.0f}")
+            
+            st.markdown(f"**{scenario_b.name}**")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                total_contrib_b = timeline_b['contributions'].sum()
+                st.metric("Total Contributions", f"${total_contrib_b:,.0f}")
+            with col2:
+                total_withdraw_b = timeline_b['withdrawals'].sum()
+                st.metric("Total Withdrawals", f"${total_withdraw_b:,.0f}")
+            with col3:
+                total_fees_b = timeline_b['fees'].sum()
+                st.metric("Total Fees", f"${total_fees_b:,.0f}")
+            with col4:
+                total_taxes_b = timeline_b['taxes'].sum()
+                st.metric("Total Taxes", f"${total_taxes_b:,.0f}")
+        else:
+            # Single scenario summary
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                total_contrib = timeline_a['contributions'].sum()
+                st.metric("Total Contributions", f"${total_contrib:,.0f}")
+            with col2:
+                total_withdraw = timeline_a['withdrawals'].sum()
+                st.metric("Total Withdrawals", f"${total_withdraw:,.0f}")
+            with col3:
+                total_fees = timeline_a['fees'].sum()
+                st.metric("Total Fees", f"${total_fees:,.0f}")
+            with col4:
+                total_taxes = timeline_a['taxes'].sum()
+                st.metric("Total Taxes", f"${total_taxes:,.0f}")
     
     # Timeline Table
     st.markdown("## Annual Timeline Analysis")
