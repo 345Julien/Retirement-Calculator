@@ -1083,33 +1083,65 @@ def main():
     if 'end_age' not in st.session_state:
         st.session_state.end_age = END_AGE
     
-    # Create sliders - key parameter syncs with session state automatically
-    current_age = st.sidebar.slider(
-        "Current age",
-        min_value=18,
-        max_value=80,
-        value=int(st.session_state.current_age),
-        help="Your current age"
-    )
-    # Update session state after widget interaction
+    # Create sliders with number inputs
+    col1, col2 = st.sidebar.columns([3, 1])
+    with col1:
+        current_age_slider = st.slider(
+            "Current age",
+            min_value=18,
+            max_value=80,
+            value=int(st.session_state.current_age),
+            help="Your current age"
+        )
+    with col2:
+        current_age_input = st.number_input(
+            "##current_age_input",
+            min_value=18,
+            max_value=80,
+            value=int(st.session_state.current_age),
+            label_visibility="collapsed"
+        )
+    current_age = current_age_input if current_age_input != int(st.session_state.current_age) else current_age_slider
     st.session_state.current_age = current_age
     
-    retirement_age = st.sidebar.slider(
-        "Retirement age",
-        min_value=current_age,
-        max_value=max(current_age + 1, 100),
-        value=int(st.session_state.retirement_age) if st.session_state.retirement_age >= current_age else current_age,
-        help="Age when you plan to retire"
-    )
+    col1, col2 = st.sidebar.columns([3, 1])
+    with col1:
+        retirement_age_slider = st.slider(
+            "Retirement age",
+            min_value=current_age,
+            max_value=max(current_age + 1, 100),
+            value=int(st.session_state.retirement_age) if st.session_state.retirement_age >= current_age else current_age,
+            help="Age when you plan to retire"
+        )
+    with col2:
+        retirement_age_input = st.number_input(
+            "##retirement_age_input",
+            min_value=current_age,
+            max_value=max(current_age + 1, 100),
+            value=int(st.session_state.retirement_age) if st.session_state.retirement_age >= current_age else current_age,
+            label_visibility="collapsed"
+        )
+    retirement_age = retirement_age_input if retirement_age_input != int(st.session_state.retirement_age) else retirement_age_slider
     st.session_state.retirement_age = retirement_age
     
-    end_age = st.sidebar.slider(
-        "End age (planning horizon)",
-        min_value=retirement_age,
-        max_value=max(retirement_age + 1, 110),
-        value=int(st.session_state.end_age) if st.session_state.end_age >= retirement_age else retirement_age,
-        help="Plan until this age"
-    )
+    col1, col2 = st.sidebar.columns([3, 1])
+    with col1:
+        end_age_slider = st.slider(
+            "End age (planning horizon)",
+            min_value=retirement_age,
+            max_value=max(retirement_age + 1, 110),
+            value=int(st.session_state.end_age) if st.session_state.end_age >= retirement_age else retirement_age,
+            help="Plan until this age"
+        )
+    with col2:
+        end_age_input = st.number_input(
+            "##end_age_input",
+            min_value=retirement_age,
+            max_value=max(retirement_age + 1, 110),
+            value=int(st.session_state.end_age) if st.session_state.end_age >= retirement_age else retirement_age,
+            label_visibility="collapsed"
+        )
+    end_age = end_age_input if end_age_input != int(st.session_state.end_age) else end_age_slider
     st.session_state.end_age = end_age
     
     # Financial inputs
@@ -1165,24 +1197,50 @@ def main():
     if 'fee_pct' not in st.session_state:
         st.session_state.fee_pct = FEE_PCT
     
-    nominal_return_pct = st.sidebar.slider(
-        "Expected nominal return (%)",
-        min_value=0.0,
-        max_value=20.0,
-        value=float(st.session_state.nominal_return_pct),
-        step=0.1,
-        help="Expected annual return before inflation"
-    )
+    col1, col2 = st.sidebar.columns([3, 1])
+    with col1:
+        nominal_return_slider = st.slider(
+            "Expected nominal return (%)",
+            min_value=0.0,
+            max_value=20.0,
+            value=float(st.session_state.nominal_return_pct),
+            step=0.1,
+            help="Expected annual return before inflation"
+        )
+    with col2:
+        nominal_return_input = st.number_input(
+            "##nominal_return_input",
+            min_value=0.0,
+            max_value=20.0,
+            value=float(st.session_state.nominal_return_pct),
+            step=0.1,
+            label_visibility="collapsed",
+            format="%.1f"
+        )
+    nominal_return_pct = nominal_return_input if nominal_return_input != float(st.session_state.nominal_return_pct) else nominal_return_slider
     st.session_state.nominal_return_pct = nominal_return_pct
     
-    inflation_pct = st.sidebar.slider(
-        "Inflation (%)",
-        min_value=0.0,
-        max_value=10.0,
-        value=float(st.session_state.inflation_pct),
-        step=0.1,
-        help="Expected annual inflation"
-    )
+    col1, col2 = st.sidebar.columns([3, 1])
+    with col1:
+        inflation_slider = st.slider(
+            "Inflation (%)",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(st.session_state.inflation_pct),
+            step=0.1,
+            help="Expected annual inflation"
+        )
+    with col2:
+        inflation_input = st.number_input(
+            "##inflation_input",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(st.session_state.inflation_pct),
+            step=0.1,
+            label_visibility="collapsed",
+            format="%.1f"
+        )
+    inflation_pct = inflation_input if inflation_input != float(st.session_state.inflation_pct) else inflation_slider
     st.session_state.inflation_pct = inflation_pct
     
     inflation_enabled = st.sidebar.toggle(
@@ -1192,14 +1250,27 @@ def main():
     )
     st.session_state.inflation_enabled = inflation_enabled
     
-    fee_pct = st.sidebar.slider(
-        "Annual fee/expense drag (%)",
-        min_value=0.0,
-        max_value=5.0,
-        value=float(st.session_state.fee_pct),
-        step=0.05,
-        help="Annual fees and expenses"
-    )
+    col1, col2 = st.sidebar.columns([3, 1])
+    with col1:
+        fee_slider = st.slider(
+            "Annual fee/expense drag (%)",
+            min_value=0.0,
+            max_value=5.0,
+            value=float(st.session_state.fee_pct),
+            step=0.05,
+            help="Annual fees and expenses"
+        )
+    with col2:
+        fee_input = st.number_input(
+            "##fee_input",
+            min_value=0.0,
+            max_value=5.0,
+            value=float(st.session_state.fee_pct),
+            step=0.05,
+            label_visibility="collapsed",
+            format="%.2f"
+        )
+    fee_pct = fee_input if fee_input != float(st.session_state.fee_pct) else fee_slider
     st.session_state.fee_pct = fee_pct
     
 
@@ -1228,14 +1299,27 @@ def main():
     withdrawal_frequency = st.session_state.withdrawal_frequency
     
     if withdrawal_method == "Fixed % of prior-year end balance":
-        withdrawal_pct = st.sidebar.slider(
-            "Withdrawal % of balance",
-            min_value=0.0,
-            max_value=20.0,
-            value=float(st.session_state.withdrawal_pct),
-            step=0.1,
-            help="Percentage of prior year's ending balance to withdraw annually"
-        )
+        col1, col2 = st.sidebar.columns([3, 1])
+        with col1:
+            withdrawal_pct_slider = st.slider(
+                "Withdrawal % of balance",
+                min_value=0.0,
+                max_value=20.0,
+                value=float(st.session_state.withdrawal_pct),
+                step=0.1,
+                help="Percentage of prior year's ending balance to withdraw annually"
+            )
+        with col2:
+            withdrawal_pct_input = st.number_input(
+                "##withdrawal_pct_input",
+                min_value=0.0,
+                max_value=20.0,
+                value=float(st.session_state.withdrawal_pct),
+                step=0.1,
+                label_visibility="collapsed",
+                format="%.1f"
+            )
+        withdrawal_pct = withdrawal_pct_input if withdrawal_pct_input != float(st.session_state.withdrawal_pct) else withdrawal_pct_slider
         st.session_state.withdrawal_pct = withdrawal_pct
         
         # Calculate and display the nominal annual withdrawal amount in USD
@@ -1324,27 +1408,52 @@ def main():
     
     mc_runs = st.session_state.mc_runs
     if enable_mc:
-        mc_runs = st.sidebar.slider(
-            "Monte Carlo runs",
-            min_value=100,
-            max_value=5000,
-            value=int(st.session_state.mc_runs),
-            step=100
-        )
+        col1, col2 = st.sidebar.columns([3, 1])
+        with col1:
+            mc_runs_slider = st.slider(
+                "Monte Carlo runs",
+                min_value=100,
+                max_value=5000,
+                value=int(st.session_state.mc_runs),
+                step=100
+            )
+        with col2:
+            mc_runs_input = st.number_input(
+                "##mc_runs_input",
+                min_value=100,
+                max_value=5000,
+                value=int(st.session_state.mc_runs),
+                step=100,
+                label_visibility="collapsed"
+            )
+        mc_runs = mc_runs_input if mc_runs_input != int(st.session_state.mc_runs) else mc_runs_slider
         st.session_state.mc_runs = mc_runs
     
     # Initialize return_stdev_pct in session state if not present
     if 'return_stdev_pct' not in st.session_state:
         st.session_state.return_stdev_pct = RETURN_STDEV_PCT
     
-    return_stdev_pct = st.sidebar.slider(
-        "Return volatility (stdev, %)",
-        min_value=0.0,
-        max_value=50.0,
-        value=float(st.session_state.return_stdev_pct),
-        step=0.5,
-        help="Standard deviation for Monte Carlo simulation"
-    )
+    col1, col2 = st.sidebar.columns([3, 1])
+    with col1:
+        return_stdev_slider = st.slider(
+            "Return volatility (stdev, %)",
+            min_value=0.0,
+            max_value=50.0,
+            value=float(st.session_state.return_stdev_pct),
+            step=0.5,
+            help="Standard deviation for Monte Carlo simulation"
+        )
+    with col2:
+        return_stdev_input = st.number_input(
+            "##return_stdev_input",
+            min_value=0.0,
+            max_value=50.0,
+            value=float(st.session_state.return_stdev_pct),
+            step=0.5,
+            label_visibility="collapsed",
+            format="%.1f"
+        )
+    return_stdev_pct = return_stdev_input if return_stdev_input != float(st.session_state.return_stdev_pct) else return_stdev_slider
     st.session_state.return_stdev_pct = return_stdev_pct
     
     # Withdrawal tax rate
