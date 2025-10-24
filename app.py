@@ -1083,12 +1083,13 @@ def main():
     if 'end_age' not in st.session_state:
         st.session_state.end_age = END_AGE
     
-    # Create sliders - they will update session state automatically via key parameter
+    # Create sliders - key parameter automatically syncs with session state
+    # DO NOT provide value parameter when using key - it causes conflicts
     current_age = st.sidebar.slider(
         "Current age",
         min_value=18,
         max_value=80,
-        value=st.session_state.current_age,
+        value=CURRENT_AGE,  # Default value only used on very first load
         key="current_age",
         help="Your current age"
     )
@@ -1097,7 +1098,7 @@ def main():
         "Retirement age",
         min_value=current_age,
         max_value=max(current_age + 1, 100),
-        value=max(st.session_state.retirement_age, current_age),
+        value=RETIREMENT_AGE,  # Default value only used on very first load
         key="retirement_age",
         help="Age when you plan to retire"
     )
@@ -1106,7 +1107,7 @@ def main():
         "End age (planning horizon)",
         min_value=retirement_age,
         max_value=max(retirement_age + 1, 110),
-        value=max(st.session_state.end_age, retirement_age),
+        value=END_AGE,  # Default value only used on very first load
         key="end_age",
         help="Plan until this age"
     )
@@ -1123,7 +1124,7 @@ def main():
     current_balance = st.sidebar.number_input(
         "Current combined balance ($)",
         min_value=0.0,
-        value=st.session_state.current_balance,
+        value=float(CURRENT_BALANCE),
         step=10000.0,
         key="current_balance",
         help="Your total portfolio value today"
@@ -1133,7 +1134,7 @@ def main():
     contrib_amount = st.sidebar.number_input(
         "Contribution amount ($)",
         min_value=0.0,
-        value=st.session_state.contrib_amount,
+        value=float(CONTRIB_AMOUNT),
         step=100.0,
         key="contrib_amount",
         help="How much you contribute each period"
@@ -1146,7 +1147,7 @@ def main():
     contrib_cadence = st.sidebar.radio(
         "Contribution cadence",
         options=["Monthly", "Annual"],
-        index=0 if st.session_state.contrib_cadence == 'Monthly' else 1,
+        index=0,  # Default to Monthly
         key="contrib_cadence",
         help="Contributions stop automatically at retirement"
     )
@@ -1168,7 +1169,7 @@ def main():
         "Expected nominal return (%)",
         min_value=0.0,
         max_value=20.0,
-        value=st.session_state.nominal_return_pct,
+        value=NOMINAL_RETURN_PCT,
         step=0.1,
         key="nominal_return_pct",
         help="Expected annual return before inflation"
@@ -1178,7 +1179,7 @@ def main():
         "Inflation (%)",
         min_value=0.0,
         max_value=10.0,
-        value=st.session_state.inflation_pct,
+        value=INFLATION_PCT,
         step=0.1,
         key="inflation_pct",
         help="Expected annual inflation"
@@ -1186,7 +1187,7 @@ def main():
     
     inflation_enabled = st.sidebar.toggle(
         "Apply Inflation",
-        value=st.session_state.inflation_enabled,
+        value=True,
         key="inflation_enabled",
         help="Toggle to include inflation in all future years. If off, inflation is ignored in calculations."
     )
@@ -1195,7 +1196,7 @@ def main():
         "Annual fee/expense drag (%)",
         min_value=0.0,
         max_value=5.0,
-        value=st.session_state.fee_pct,
+        value=FEE_PCT,
         step=0.05,
         key="fee_pct",
         help="Annual fees and expenses"
@@ -1218,7 +1219,7 @@ def main():
     withdrawal_method = st.sidebar.radio(
         "Withdrawal method",
         options=["Fixed % of prior-year end balance", "Fixed real dollars"],
-        index=0 if st.session_state.withdrawal_method == "Fixed % of prior-year end balance" else 1,
+        index=0,  # Default to first option
         key="withdrawal_method",
         help="Choose withdrawal calculation method"
     )
@@ -1227,15 +1228,11 @@ def main():
     withdrawal_frequency = st.session_state.withdrawal_frequency
     
     if withdrawal_method == "Fixed % of prior-year end balance":
-        # Initialize withdrawal_pct in session state if not present
-        if 'withdrawal_pct' not in st.session_state:
-            st.session_state.withdrawal_pct = WITHDRAWAL_PCT
-        
         withdrawal_pct = st.sidebar.slider(
             "Withdrawal % of balance",
             min_value=0.0,
             max_value=20.0,
-            value=st.session_state.withdrawal_pct,
+            value=WITHDRAWAL_PCT,
             step=0.1,
             key="withdrawal_pct",
             help="Percentage of prior year's ending balance to withdraw annually"
@@ -1255,28 +1252,20 @@ def main():
     else:
         withdrawal_pct = st.session_state.withdrawal_pct  # Keep default for scenario saving
         
-        # Initialize withdrawal_frequency in session state if not present
-        if 'withdrawal_frequency' not in st.session_state:
-            st.session_state.withdrawal_frequency = "Annual"
-        
         withdrawal_frequency = st.sidebar.radio(
             "Withdrawal frequency",
             options=["Annual", "Monthly"],
-            index=0 if st.session_state.withdrawal_frequency == "Annual" else 1,
+            index=0,  # Default to Annual
             key="withdrawal_frequency",
             help="How often withdrawals occur"
         )
         
         frequency_label = "monthly" if withdrawal_frequency == "Monthly" else "annual"
         
-        # Initialize withdrawal_real_amount in session state if not present
-        if 'withdrawal_real_amount' not in st.session_state:
-            st.session_state.withdrawal_real_amount = WITHDRAWAL_REAL_AMOUNT
-        
         withdrawal_real_amount = st.sidebar.number_input(
             f"Fixed real {frequency_label} withdrawal ($)",
             min_value=0.0,
-            value=st.session_state.withdrawal_real_amount,
+            value=float(WITHDRAWAL_REAL_AMOUNT),
             step=1000.0,
             key="withdrawal_real_amount",
             help="Inflation-adjusted purchasing power"
@@ -1328,7 +1317,7 @@ def main():
     
     enable_mc = st.sidebar.checkbox(
         "Enable Monte Carlo",
-        value=st.session_state.enable_mc,
+        value=ENABLE_MC,
         key="enable_mc",
         help="Run probabilistic simulation"
     )
@@ -1339,7 +1328,7 @@ def main():
             "Monte Carlo runs",
             min_value=100,
             max_value=5000,
-            value=st.session_state.mc_runs,
+            value=MC_RUNS,
             key="mc_runs",
             step=100
         )
@@ -1352,7 +1341,7 @@ def main():
         "Return volatility (stdev, %)",
         min_value=0.0,
         max_value=50.0,
-        value=st.session_state.return_stdev_pct,
+        value=RETURN_STDEV_PCT,
         step=0.5,
         key="return_stdev_pct",
         help="Standard deviation for Monte Carlo simulation"
@@ -1362,6 +1351,18 @@ def main():
     st.sidebar.markdown("#### Withdrawal Tax Rate")
     
     # Initialize effective_tax_rate_pct in session state if not present
+    if 'effective_tax_rate_pct' not in st.session_state:
+        st.session_state.effective_tax_rate_pct = 0.0
+    
+    effective_tax_rate_pct = st.sidebar.number_input(
+        "Withdrawal tax rate (%)",
+        min_value=0.0,
+        max_value=100.0,
+        value=0.0,
+        key="effective_tax_rate_pct",
+        step=1.0,
+        help="Tax rate applied to withdrawals"
+    )
     if 'effective_tax_rate_pct' not in st.session_state:
         st.session_state.effective_tax_rate_pct = 0.0
     
