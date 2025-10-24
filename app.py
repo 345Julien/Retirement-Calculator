@@ -1075,33 +1075,38 @@ def main():
     # Basic inputs
     st.sidebar.markdown("#### Personal Information")
     
-    # Use session state values if they exist, otherwise use defaults
-    current_age_default = st.session_state.get('current_age', CURRENT_AGE)
+    # Initialize age parameters in session state if not present
+    if 'current_age' not in st.session_state:
+        st.session_state.current_age = CURRENT_AGE
+    if 'retirement_age' not in st.session_state:
+        st.session_state.retirement_age = RETIREMENT_AGE
+    if 'end_age' not in st.session_state:
+        st.session_state.end_age = END_AGE
+    
+    # Create sliders - they will update session state automatically via key parameter
     current_age = st.sidebar.slider(
         "Current age",
         min_value=18,
         max_value=80,
-        value=current_age_default,
+        value=st.session_state.current_age,
         key="current_age",
         help="Your current age"
     )
     
-    retirement_age_default = st.session_state.get('retirement_age', max(RETIREMENT_AGE, current_age))
     retirement_age = st.sidebar.slider(
         "Retirement age",
         min_value=current_age,
-        max_value=80,
-        value=max(retirement_age_default, current_age),
+        max_value=max(current_age + 1, 100),
+        value=max(st.session_state.retirement_age, current_age),
         key="retirement_age",
         help="Age when you plan to retire"
     )
     
-    end_age_default = st.session_state.get('end_age', max(END_AGE, retirement_age))
     end_age = st.sidebar.slider(
         "End age (planning horizon)",
         min_value=retirement_age,
-        max_value=110,
-        value=max(end_age_default, retirement_age),
+        max_value=max(retirement_age + 1, 110),
+        value=max(st.session_state.end_age, retirement_age),
         key="end_age",
         help="Plan until this age"
     )
@@ -1172,11 +1177,9 @@ def main():
         max_value=20.0,
         value=st.session_state.nominal_return_pct,
         step=0.1,
-        key="nominal_return_pct_slider",
+        key="nominal_return_pct",
         help="Expected annual return before inflation"
     )
-    # Sync to session state
-    st.session_state.nominal_return_pct = nominal_return_pct
     
     inflation_pct = st.sidebar.slider(
         "Inflation (%)",
@@ -1184,20 +1187,16 @@ def main():
         max_value=10.0,
         value=st.session_state.inflation_pct,
         step=0.1,
-        key="inflation_pct_slider",
+        key="inflation_pct",
         help="Expected annual inflation"
     )
-    # Sync to session state
-    st.session_state.inflation_pct = inflation_pct
     
     inflation_enabled = st.sidebar.toggle(
         "Apply Inflation",
         value=st.session_state.inflation_enabled,
-        key="inflation_enabled_toggle",
+        key="inflation_enabled",
         help="Toggle to include inflation in all future years. If off, inflation is ignored in calculations."
     )
-    # Sync to session state
-    st.session_state.inflation_enabled = inflation_enabled
     
     fee_pct = st.sidebar.slider(
         "Annual fee/expense drag (%)",
@@ -1205,11 +1204,9 @@ def main():
         max_value=5.0,
         value=st.session_state.fee_pct,
         step=0.05,
-        key="fee_pct_slider",
+        key="fee_pct",
         help="Annual fees and expenses"
     )
-    # Sync to session state
-    st.session_state.fee_pct = fee_pct
     
 
     # Withdrawal settings
@@ -1239,17 +1236,19 @@ def main():
     withdrawal_frequency = st.session_state.withdrawal_frequency
     
     if withdrawal_method == "Fixed % of prior-year end balance":
+        # Initialize withdrawal_pct in session state if not present
+        if 'withdrawal_pct' not in st.session_state:
+            st.session_state.withdrawal_pct = WITHDRAWAL_PCT
+        
         withdrawal_pct = st.sidebar.slider(
             "Withdrawal % of balance",
             min_value=0.0,
             max_value=20.0,
             value=st.session_state.withdrawal_pct,
             step=0.1,
-            key="withdrawal_pct_slider",
+            key="withdrawal_pct",
             help="Percentage of prior year's ending balance to withdraw annually"
         )
-        # Sync to session state
-        st.session_state.withdrawal_pct = withdrawal_pct
         
         # Calculate and display the nominal annual withdrawal amount in USD
         calculated_annual_withdrawal = current_balance * (withdrawal_pct / 100.0)
@@ -1264,27 +1263,33 @@ def main():
         withdrawal_real_amount = st.session_state.withdrawal_real_amount  # Keep default for scenario saving
     else:
         withdrawal_pct = st.session_state.withdrawal_pct  # Keep default for scenario saving
+        
+        # Initialize withdrawal_frequency in session state if not present
+        if 'withdrawal_frequency' not in st.session_state:
+            st.session_state.withdrawal_frequency = "Annual"
+        
         withdrawal_frequency = st.sidebar.radio(
             "Withdrawal frequency",
             options=["Annual", "Monthly"],
             index=0 if st.session_state.withdrawal_frequency == "Annual" else 1,
-            key="withdrawal_frequency_radio",
+            key="withdrawal_frequency",
             help="How often withdrawals occur"
         )
-        # Sync to session state
-        st.session_state.withdrawal_frequency = withdrawal_frequency
         
         frequency_label = "monthly" if withdrawal_frequency == "Monthly" else "annual"
+        
+        # Initialize withdrawal_real_amount in session state if not present
+        if 'withdrawal_real_amount' not in st.session_state:
+            st.session_state.withdrawal_real_amount = WITHDRAWAL_REAL_AMOUNT
+        
         withdrawal_real_amount = st.sidebar.number_input(
             f"Fixed real {frequency_label} withdrawal ($)",
             min_value=0.0,
             value=st.session_state.withdrawal_real_amount,
             step=1000.0,
-            key="withdrawal_real_amount_input",
+            key="withdrawal_real_amount",
             help="Inflation-adjusted purchasing power"
         )
-        # Sync to session state
-        st.session_state.withdrawal_real_amount = withdrawal_real_amount
     
     # Set default frequency if not already set
     if 'withdrawal_frequency' not in locals():
@@ -1333,10 +1338,9 @@ def main():
     enable_mc = st.sidebar.checkbox(
         "Enable Monte Carlo",
         value=st.session_state.enable_mc,
-        key="enable_mc_checkbox",
+        key="enable_mc",
         help="Run probabilistic simulation"
     )
-    st.session_state.enable_mc = enable_mc
     
     mc_runs = st.session_state.mc_runs
     if enable_mc:
@@ -1345,10 +1349,9 @@ def main():
             min_value=100,
             max_value=5000,
             value=st.session_state.mc_runs,
-            key="mc_runs_slider",
+            key="mc_runs",
             step=100
         )
-        st.session_state.mc_runs = mc_runs
     
     # Initialize return_stdev_pct in session state if not present
     if 'return_stdev_pct' not in st.session_state:
@@ -1360,24 +1363,26 @@ def main():
         max_value=50.0,
         value=st.session_state.return_stdev_pct,
         step=0.5,
-        key="return_stdev_pct_slider",
+        key="return_stdev_pct",
         help="Standard deviation for Monte Carlo simulation"
     )
-    # Sync to session state
-    st.session_state.return_stdev_pct = return_stdev_pct
     
     # Withdrawal tax rate
     st.sidebar.markdown("#### Withdrawal Tax Rate")
+    
+    # Initialize effective_tax_rate_pct in session state if not present
+    if 'effective_tax_rate_pct' not in st.session_state:
+        st.session_state.effective_tax_rate_pct = 0.0
+    
     effective_tax_rate_pct = st.sidebar.number_input(
         "Withdrawal tax rate (%)",
         min_value=0.0,
         max_value=100.0,
         value=st.session_state.effective_tax_rate_pct,
-        key="effective_tax_rate_input",
+        key="effective_tax_rate_pct",
         step=1.0,
         help="Tax rate applied to withdrawals"
     )
-    st.session_state.effective_tax_rate_pct = effective_tax_rate_pct
     
     enable_taxes = effective_tax_rate_pct > 0
     
