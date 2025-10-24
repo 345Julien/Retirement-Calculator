@@ -1125,11 +1125,9 @@ def main():
         min_value=0.0,
         value=st.session_state.current_balance,
         step=10000.0,
-        key="current_balance_input",
+        key="current_balance",
         help="Your total portfolio value today"
     )
-    # Sync the value to session state
-    st.session_state.current_balance = current_balance
     
     st.sidebar.markdown("#### Ongoing Contributions")
     contrib_amount = st.sidebar.number_input(
@@ -1137,12 +1135,9 @@ def main():
         min_value=0.0,
         value=st.session_state.contrib_amount,
         step=100.0,
-        key="contrib_amount_input",
+        key="contrib_amount",
         help="How much you contribute each period"
     )
-    # Sync the value to session state
-    st.session_state.contrib_amount = contrib_amount
-
     
     # Initialize contrib_cadence in session state if not present
     if 'contrib_cadence' not in st.session_state:
@@ -1152,11 +1147,9 @@ def main():
         "Contribution cadence",
         options=["Monthly", "Annual"],
         index=0 if st.session_state.contrib_cadence == 'Monthly' else 1,
-        key="contrib_cadence_radio",
+        key="contrib_cadence",
         help="Contributions stop automatically at retirement"
     )
-    # Sync to session state
-    st.session_state.contrib_cadence = contrib_cadence
     
     # Returns & inflation
     st.sidebar.markdown("#### Market Assumptions")
@@ -1226,11 +1219,9 @@ def main():
         "Withdrawal method",
         options=["Fixed % of prior-year end balance", "Fixed real dollars"],
         index=0 if st.session_state.withdrawal_method == "Fixed % of prior-year end balance" else 1,
-        key="withdrawal_method_radio",
+        key="withdrawal_method",
         help="Choose withdrawal calculation method"
     )
-    # Sync to session state
-    st.session_state.withdrawal_method = withdrawal_method
     
     # Default frequency to ensure variable is always defined
     withdrawal_frequency = st.session_state.withdrawal_frequency
